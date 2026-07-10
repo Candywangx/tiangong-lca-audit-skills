@@ -9,6 +9,7 @@ from tiangong_audit.process_pass_flow import (
     ModelPassWorkflow,
     ProcessPassWorkflow,
     build_pass_compliance_declarations,
+    normalize_scope_name_en,
     render_approval_report_docx,
 )
 
@@ -264,3 +265,11 @@ def test_model_pass_workflow_creates_model_report_source_and_saves_draft(tmp_pat
     assert source_ref["common:shortDescription"][0]["#text"].startswith("模型“高纯球形铝粉")
     assert "生命周期模型数据集" in review["common:reviewDetails"][0]["#text"]
     assert compliance == build_pass_compliance_declarations()
+
+
+def test_process_pass_english_scope_follows_dataset_type():
+    assert normalize_scope_name_en("Unit process, single operation") == (
+        "unit process, single operation"
+    )
+    assert normalize_scope_name_en("Unit process, black box") == "unit process, black box"
+    assert normalize_scope_name_en("Partly terminated system") == "partly terminated system"

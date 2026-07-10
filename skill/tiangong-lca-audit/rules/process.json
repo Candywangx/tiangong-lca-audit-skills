@@ -483,6 +483,65 @@
       ]
     },
     {
+      "id": "process.source.document_availability",
+      "dimension": "source_and_representativeness",
+      "rule_type": "judgment",
+      "severity": "input_gap",
+      "condition": "The dataset cites a source needed to verify key boundary, technology, geography, year, inventory, or treatment claims, but the source document cannot be downloaded, opened, or extracted.",
+      "evidence_required": ["source reference", "source download or extraction status", "affected dataset field"],
+      "decision": "Record an information gap when unavailable source evidence prevents a core check; do not state the dataset field is wrong solely because the source is unavailable.",
+      "suggestion": "Provide an accessible source document or extract, or explain the data treatment and affected field directly in the dataset.",
+      "exceptions": ["The cited source is not needed for the current audit scope.", "Equivalent source evidence is available elsewhere in the case record."],
+      "standard_refs": [
+        {
+          "source": "CFIA-LCA-database-guideline",
+          "file": "03-数据收集.md",
+          "sections": ["所需数据和信息类型/质量/来源", "报告记录"]
+        },
+        {
+          "source": "CFIA-LCA-database-guideline",
+          "file": "05-数据质量评价方法.md",
+          "sections": ["数据审查", "数据验证"]
+        }
+      ]
+    },
+    {
+      "id": "process.source.field_conflict",
+      "dimension": "source_and_representativeness",
+      "rule_type": "judgment",
+      "severity": "blocking",
+      "condition": "A source document directly contradicts a dataset field such as boundary, reference year, geography, technology route, key parameter, or included/excluded activity.",
+      "evidence_required": ["dataset field value", "source excerpt or page evidence", "conflicting source value"],
+      "decision": "Treat as blocking when the conflict changes the interpretation, representativeness, or reusable scope of the dataset.",
+      "suggestion": "Align the dataset field with the source evidence, or document how the source value was adjusted for this dataset.",
+      "exceptions": ["The dataset explicitly explains a justified adjustment from the source.", "The source excerpt is background context rather than the data used for the current dataset."],
+      "standard_refs": [
+        {
+          "source": "CFIA-LCA-database-guideline",
+          "file": "05-数据质量评价方法.md",
+          "sections": ["一致性", "技术代表性", "地理代表性", "时间代表性"]
+        }
+      ]
+    },
+    {
+      "id": "process.source.field_not_supported",
+      "dimension": "source_and_representativeness",
+      "rule_type": "judgment",
+      "severity": "manual_review",
+      "condition": "A source document is available, but the audit cannot find support for a key dataset claim that depends on that source.",
+      "evidence_required": ["dataset field value", "source extraction result", "search terms or checked pages"],
+      "decision": "Record manual review or information gap depending on whether the missing support affects a core audit dimension; do not automatically mark the field as false.",
+      "suggestion": "Point to the page or section supporting the claim, add the data treatment explanation, or revise the field to match the documented source scope.",
+      "exceptions": ["The source is only one of multiple inputs and another source supports the field.", "The checked extraction is incomplete or OCR quality is insufficient."],
+      "standard_refs": [
+        {
+          "source": "CFIA-LCA-database-guideline",
+          "file": "03-数据收集.md",
+          "sections": ["所需数据和信息类型/质量/来源", "数据质量"]
+        }
+      ]
+    },
+    {
       "id": "process.description.source_content_attribution",
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",

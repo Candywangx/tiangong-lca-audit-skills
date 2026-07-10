@@ -165,6 +165,17 @@ def normalize_scope_name(type_of_dataset: str | None) -> str:
     raise ProcessPassFlowError(f"Unknown process typeOfDataSet: {type_of_dataset}")
 
 
+def normalize_scope_name_en(type_of_dataset: str | None) -> str:
+    mapping = {
+        "Unit process, single operation": "unit process, single operation",
+        "Unit process, black box": "unit process, black box",
+        "Partly terminated system": "partly terminated system",
+    }
+    if type_of_dataset in mapping:
+        return mapping[type_of_dataset]
+    raise ProcessPassFlowError(f"Unknown process typeOfDataSet: {type_of_dataset}")
+
+
 def build_pass_compliance_declarations() -> dict[str, Any]:
     return deepcopy(PASS_COMPLIANCE_DECLARATIONS)
 
@@ -380,6 +391,7 @@ class ProcessPassWorkflow:
             "typeOfDataSet"
         )
         scope_name = normalize_scope_name(type_of_dataset)
+        scope_name_en = normalize_scope_name_en(type_of_dataset)
         return {
             "dataset_id": task["data_id"],
             "version": task["data_version"],
@@ -387,6 +399,7 @@ class ProcessPassWorkflow:
             "en_name": en_name,
             "full_name": f"{zh_name} / {en_name}",
             "scope_name": scope_name,
+            "scope_name_en": scope_name_en,
             "method_scope": f"{scope_name}；{REVIEW_METHOD_NAME}",
             "permanent_uri": (
                 "https://lcdn.tiangong.earth/datasetdetail/process.xhtml"
@@ -506,7 +519,7 @@ class ProcessPassWorkflow:
                                     "@xml:lang": "en",
                                     "#text": (
                                         f"This validation review covers the process dataset \"{context['en_name']}\". "
-                                        "The review scope is unit process, black box and the method is mass balance. "
+                                        f"The review scope is {context['scope_name_en']} and the method is mass balance. "
                                         "Based on the modelling information, technology description, reference flow, "
                                         "system boundary, and input/output inventory, the dataset structure and main "
                                         "material and energy balances support publication and reuse of this "
@@ -603,6 +616,7 @@ class ModelPassWorkflow(ProcessPassWorkflow):
             "en_name": en_name,
             "full_name": f"{zh_name} / {en_name}",
             "scope_name": scope_name,
+            "scope_name_en": "life cycle model",
             "method_scope": f"{scope_name}；{REVIEW_METHOD_NAME}",
             "permanent_uri": (
                 "https://lcdn.tiangong.earth/datasetdetail/lifecyclemodel.xhtml"

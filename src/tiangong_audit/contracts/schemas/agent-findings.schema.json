@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiangong-audit.local/schemas/agent-findings.schema.json",
+  "title": "Tiangong Audit Agent Findings",
+  "type": "object",
+  "required": ["schema_version", "review_id", "reviewed_by", "rule_reviews"],
+  "properties": {
+    "schema_version": {"const": "tiangong-audit-agent-findings-v1"},
+    "review_id": {"type": "string"},
+    "dataset_id": {"type": "string"},
+    "dataset_type": {"enum": ["process", "model", ""]},
+    "reviewed_by": {"type": "string", "minLength": 1},
+    "reviewed_at": {"type": "string"},
+    "source_documents_read": {"type": "array", "items": {"type": "string"}},
+    "rule_reviews": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/rule_review"}
+    },
+    "additional_findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/additional_finding"}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "rule_review": {
+      "type": "object",
+      "required": ["rule_id", "verdict"],
+      "properties": {
+        "rule_id": {"type": "string", "minLength": 1},
+        "verdict": {"enum": ["pass", "fail", "cannot_judge", "not_applicable"]},
+        "location": {"type": "string"},
+        "evidence": {"type": "string"},
+        "judgment": {"type": "string"},
+        "suggestion": {"type": "string"},
+        "severity": {"enum": ["blocking", "advisory", "manual_review", "input_gap", ""]},
+        "evidence_refs": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"verdict": {"const": "fail"}}},
+          "then": {
+            "required": ["evidence", "severity", "suggestion", "evidence_refs"],
+            "properties": {
+              "severity": {"enum": ["blocking", "advisory", "manual_review", "input_gap"]},
+              "evidence_refs": {"minItems": 1}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"verdict": {"const": "pass"}}},
+          "then": {
+            "required": ["evidence", "evidence_refs"],
+            "properties": {"evidence_refs": {"minItems": 1}}
+          }
+        },
+        {
+          "if": {"properties": {"verdict": {"enum": ["cannot_judge", "not_applicable"]}}},
+          "then": {"required": ["judgment"]}
+        }
+      ]
+    },
+    "additional_finding": {
+      "type": "object",
+      "required": ["rule_id", "severity", "location", "evidence", "judgment", "suggestion"],
+      "properties": {
+        "rule_id": {"type": "string"},
+        "severity": {"enum": ["blocking", "advisory", "manual_review", "input_gap"]},
+        "location": {"type": "string", "minLength": 1},
+        "evidence": {"type": "string", "minLength": 1},
+        "judgment": {"type": "string", "minLength": 1},
+        "suggestion": {"type": "string", "minLength": 1},
+        "source": {"type": "string"},
+        "evidence_refs": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    }
+  }
+}

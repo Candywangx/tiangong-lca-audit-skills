@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Tiangong LCA dataset audit skill, rules, and workflow toolkit."
 requires-python = ">=3.11"
 dependencies = [
+    "pypdf>=5.0.0",
     "requests>=2.28.0",
 ]
 
@@ -15,6 +16,9 @@ tiangong-audit = "tiangong_audit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+tiangong_audit = ["contracts/schemas/*.json"]
 
 [tool.uv]
 package = true

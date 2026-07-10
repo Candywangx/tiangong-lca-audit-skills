@@ -22,11 +22,26 @@ class TiangongWriteDisabledError(TiangongAPIError):
     """Raised when a caller attempts a platform write without enabling writes."""
 
 
-AccountRole = Literal["admin", "member"]
+AccountRole = Literal["admin", "member", "reject", "pass"]
+ACCOUNT_ROLES = {"admin", "member", "reject", "pass"}
+OPERATION_ROLE_CREDENTIAL_FALLBACKS = {
+    "reject": "admin",
+    "pass": "member",
+}
 
 
 def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes"}
+
+
+def _supabase_url_from_env() -> str:
+    url = os.getenv("TIANGONG_SUPABASE_URL", "")
+    if url:
+        return url
+    legacy_value = os.getenv("TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY", "")
+    if legacy_value.startswith(("http://", "https://")):
+        return legacy_value
+    return ""
 
 
 def _load_local_env(path: Path) -> None:
@@ -47,7 +62,21 @@ def _looks_like_expired_auth(response: Any) -> bool:
     if response.status_code != 403:
         return False
     text = response.text.lower()
-    return "bad_jwt" in text or "jwt" in text and "expired" in text
+    if "jwt" not in text:
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "bad_jwt",
+            "expired",
+            "invalid jwt",
+            "malformed",
+            "unable to parse",
+            "unable to verify",
+            "base64 decode",
+            "signature",
+        )
+    )
 
 
 class TiangongAPIClient:
@@ -69,7 +98,7 @@ class TiangongAPIClient:
         _load_local_env(Path.cwd() / ".env")
         self.account_role = self._resolve_account_role(account_role)
         self.supabase_url = (
-            os.getenv("TIANGONG_SUPABASE_URL", "") if supabase_url is None else supabase_url
+            _supabase_url_from_env() if supabase_url is None else supabase_url
         ).rstrip("/")
         self.publishable_key = (
             os.getenv("TIANGONG_SUPABASE_ANON_KEY", "")
@@ -122,9 +151,9 @@ class TiangongAPIClient:
         normalized = value.strip().lower() if isinstance(value, str) else ""
         if not normalized:
             return None
-        if normalized not in {"admin", "member"}:
+        if normalized not in ACCOUNT_ROLES:
             raise TiangongAuthError(
-                "Invalid account role. Use admin or member."
+                "Invalid account role. Use admin, member, reject, or pass."
             )
         return normalized  # type: ignore[return-value]
 
@@ -137,12 +166,19 @@ class TiangongAPIClient:
         if explicit_value is not None:
             return explicit_value
         if self.account_role is not None:
-            prefix = f"TIANGONG_{self.account_role.upper()}"
-            return (
-                os.getenv(f"{prefix}_{suffix}", "")
-                or os.getenv(f"{prefix}_SUPABASE_{suffix}", "")
-                or os.getenv(legacy_name, "")
-            )
+            prefixes = [self.account_role]
+            fallback = OPERATION_ROLE_CREDENTIAL_FALLBACKS.get(self.account_role)
+            if fallback:
+                prefixes.append(fallback)
+            for role in prefixes:
+                prefix = f"TIANGONG_{role.upper()}"
+                value = (
+                    os.getenv(f"{prefix}_{suffix}", "")
+                    or os.getenv(f"{prefix}_SUPABASE_{suffix}", "")
+                )
+                if value:
+                    return value
+            return os.getenv(legacy_name, "")
         return os.getenv(legacy_name, "")
 
     def _can_login(self) -> bool:
@@ -291,22 +327,18 @@ class TiangongAPIClient:
         if not self.access_token:
             self._login()
         url = f"{self.supabase_url}/storage/v1/object/external_docs/{object_name}"
-        headers = {
-            "apikey": self.publishable_key,
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": content_type,
-        }
         try:
-            with Path(path).open("rb") as handle:
-                response = self.session.request(
-                    "POST",
-                    url,
-                    data=handle,
-                    headers=headers,
-                    timeout=self.timeout,
-                )
+            body = Path(path).read_bytes()
+            response = self._storage_request(
+                "POST",
+                url,
+                data=body,
+                content_type=content_type,
+            )
         except requests.RequestException as error:
             raise TiangongAPIError(f"Platform storage upload failed: {error}") from error
+        except OSError as error:
+            raise TiangongAPIError(f"Unable to read storage upload file: {error}") from error
         if not 200 <= response.status_code < 300:
             raise TiangongAPIError(
                 f"Platform storage upload returned HTTP {response.status_code}: "
@@ -316,3 +348,64 @@ class TiangongAPIClient:
             return response.json()
         except (json.JSONDecodeError, ValueError):
             return {"status_code": response.status_code, "text": response.text}
+
+    def download_external_doc(
+        self,
+        object_name: str,
+        output_path: str | Path,
+    ) -> dict[str, Any]:
+        """Download one file from the external_docs storage bucket using auth headers."""
+        if not self.access_token:
+            self._login()
+        object_name = object_name.lstrip("/")
+        url = f"{self.supabase_url}/storage/v1/object/external_docs/{object_name}"
+        try:
+            response = self._storage_request("GET", url)
+        except requests.RequestException as error:
+            raise TiangongAPIError(f"Platform storage download failed: {error}") from error
+        if not 200 <= response.status_code < 300:
+            raise TiangongAPIError(
+                f"Platform storage download returned HTTP {response.status_code}: "
+                f"{response.text[:500]}"
+            )
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(response.content)
+        return {
+            "status_code": response.status_code,
+            "content_type": response.headers.get("Content-Type", ""),
+            "path": str(target),
+        }
+
+    def _storage_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        data: bytes | None = None,
+        content_type: str | None = None,
+    ) -> Any:
+        headers = {
+            "apikey": self.publishable_key,
+            "Authorization": f"Bearer {self.access_token}",
+        }
+        if content_type:
+            headers["Content-Type"] = content_type
+        response = self.session.request(
+            method,
+            url,
+            data=data,
+            headers=headers,
+            timeout=self.timeout,
+        )
+        if _looks_like_expired_auth(response) and self._can_login():
+            self._login()
+            headers["Authorization"] = f"Bearer {self.access_token}"
+            response = self.session.request(
+                method,
+                url,
+                data=data,
+                headers=headers,
+                timeout=self.timeout,
+            )
+        return response

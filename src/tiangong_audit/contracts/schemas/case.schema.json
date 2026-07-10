@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiangong-audit.local/schemas/case.schema.json",
+  "title": "Tiangong Audit Case Manifest",
+  "type": "object",
+  "required": ["schema_version", "review_id", "batch_id", "status", "steps"],
+  "properties": {
+    "schema_version": {"const": "tiangong-audit-case-v1"},
+    "review_id": {"type": "string", "minLength": 1},
+    "batch_id": {"type": "string", "minLength": 1},
+    "dataset_id": {"type": "string"},
+    "version": {"type": "string"},
+    "dataset_type": {"type": "string"},
+    "name_zh": {"type": "string"},
+    "name_en": {"type": "string"},
+    "status": {"type": "string"},
+    "conclusion": {"type": "string"},
+    "platform_state": {"type": "string"},
+    "case_dir": {"type": "string"},
+    "report": {"type": "string"},
+    "steps": {"type": "object", "additionalProperties": {"type": "boolean"}},
+    "artifacts": {"type": "object", "additionalProperties": {"type": "string"}},
+    "notes": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

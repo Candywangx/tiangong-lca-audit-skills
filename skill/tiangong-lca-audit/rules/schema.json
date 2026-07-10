@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiangong-audit.local/schemas/rules.schema.json",
+  "title": "Tiangong LCA Audit Rule Catalog",
+  "type": "object",
+  "required": ["schema_version", "dataset_type", "rules"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "dataset_type": {"enum": ["all", "process", "model"]},
+    "core_dimensions": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "rules": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/rule"},
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "required": [
+        "id",
+        "dimension",
+        "rule_type",
+        "severity",
+        "condition",
+        "evidence_required",
+        "decision",
+        "suggestion",
+        "exceptions"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z]+(\\.[a-z0-9_]+)+$"},
+        "dimension": {"type": "string", "minLength": 1},
+        "rule_type": {"enum": ["deterministic", "judgment"]},
+        "severity": {"enum": ["blocking", "advisory", "manual_review", "input_gap"]},
+        "condition": {"type": "string", "minLength": 1},
+        "evidence_required": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1
+        },
+        "decision": {"type": "string", "minLength": 1},
+        "suggestion": {"type": "string", "minLength": 1},
+        "exceptions": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "standard_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/standard_ref"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "standard_ref": {
+      "type": "object",
+      "required": ["source", "file", "sections"],
+      "properties": {
+        "source": {"type": "string"},
+        "file": {"type": "string"},
+        "sections": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

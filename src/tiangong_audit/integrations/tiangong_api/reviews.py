@@ -9,6 +9,7 @@ from .models import AuditResult, PlatformAction
 
 AdminQueueStatus = Literal["unassigned", "assigned", "admin-rejected"]
 MemberQueueStatus = Literal["pending", "reviewed", "reviewer-rejected"]
+ReviewActionOperation = Literal["save-draft", "submit"]
 
 
 def _queue_result(rows: Any, page: int, page_size: int) -> dict[str, Any]:
@@ -131,13 +132,35 @@ class ReviewAPI:
         )
 
     @staticmethod
-    def generate_platform_actions(result: AuditResult) -> list[PlatformAction]:
+    def generate_platform_actions(
+        result: AuditResult,
+        *,
+        operation: ReviewActionOperation = "save-draft",
+    ) -> list[PlatformAction]:
         """Generate a reviewable action plan without executing platform writes."""
-        return [
-            PlatformAction(
-                action_type="submit_review_comment",
-                target_id=result.review_task_id,
-                parameters={"conclusion": result.conclusion, "summary": result.summary},
-                description="Submit the confirmed audit comment to Tiangong",
-            )
-        ]
+        if operation == "save-draft":
+            return [
+                PlatformAction(
+                    action_type="save_comment_draft",
+                    target_id=result.review_task_id,
+                    parameters={
+                        "conclusion": result.conclusion,
+                        "summary": result.summary,
+                        "finding_count": len(result.findings),
+                    },
+                    description=(
+                        "Save the audit comment draft to Tiangong without submitting "
+                        "the review"
+                    ),
+                )
+            ]
+        if operation == "submit":
+            return [
+                PlatformAction(
+                    action_type="submit_review_comment",
+                    target_id=result.review_task_id,
+                    parameters={"conclusion": result.conclusion, "summary": result.summary},
+                    description="Submit the confirmed audit comment to Tiangong",
+                )
+            ]
+        raise ValueError(f"Unsupported platform action operation: {operation}")

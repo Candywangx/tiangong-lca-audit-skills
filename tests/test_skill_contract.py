@@ -1,12 +1,60 @@
+import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill/tiangong-lca-audit"
+DOCUMENT_DECOMPOSE_SKILL = ROOT / "skill/document-granular-decompose"
+
+
+def load_document_decompose_script():
+    script = DOCUMENT_DECOMPOSE_SKILL / "scripts/mineru_fulltext_extract.py"
+    spec = importlib.util.spec_from_file_location("mineru_fulltext_extract", script)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_skill_has_one_execution_guide():
     assert (SKILL / "SKILL.md").exists()
     assert not (SKILL / "prompts").exists()
+
+
+def test_document_granular_decompose_skill_is_installed():
+    assert (DOCUMENT_DECOMPOSE_SKILL / "SKILL.md").exists()
+    assert (DOCUMENT_DECOMPOSE_SKILL / "agents/openai.yaml").exists()
+    assert (DOCUMENT_DECOMPOSE_SKILL / "references/env.md").exists()
+    assert (DOCUMENT_DECOMPOSE_SKILL / "references/request-response.md").exists()
+    assert (DOCUMENT_DECOMPOSE_SKILL / "assets/config.example.env").exists()
+    script = DOCUMENT_DECOMPOSE_SKILL / "scripts/mineru_fulltext_extract.py"
+    assert script.exists()
+    text = script.read_text(encoding="utf-8")
+    assert "/mineru_with_images" in text
+    assert "return_txt" in text
+
+
+def test_env_example_contains_document_decompose_keys():
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "UNSTRUCTURED_API_BASE_URL" in env_example
+    assert "UNSTRUCTURED_AUTH_TOKEN" in env_example
+    assert "UNSTRUCTURED_PROVIDER" in env_example
+    assert "UNSTRUCTURED_MODEL" in env_example
+
+
+def test_document_decompose_accepts_base_url_or_full_endpoint(monkeypatch):
+    module = load_document_decompose_script()
+
+    monkeypatch.setenv("UNSTRUCTURED_API_BASE_URL", "https://example.test")
+    assert module.resolve_api_url("") == "https://example.test/mineru_with_images"
+
+    monkeypatch.setenv(
+        "UNSTRUCTURED_API_BASE_URL", "https://example.test/api/v1/mineru_with_images"
+    )
+    assert module.resolve_api_url("") == "https://example.test/api/v1/mineru_with_images"
+
+    monkeypatch.setenv("UNSTRUCTURED_API_BASE_URL", "https://example.test/api/v1")
+    assert module.resolve_api_url("") == "https://example.test/api/v1/mineru_with_images"
 
 
 def test_skill_references_are_focused():
@@ -58,6 +106,18 @@ def test_process_audit_covers_cfia_recycling_allocation_water_and_dqr():
     assert "DQR" in process_audit
 
 
+def test_source_review_requires_supplementary_material_followup():
+    skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    process_audit = (SKILL / "references/process-audit.md").read_text(encoding="utf-8")
+    input_contract = (SKILL / "references/input-contract.md").read_text(encoding="utf-8")
+    assert "document-granular-decompose" in skill_text
+    assert "document-granular-decompose" in process_audit
+    assert "related_artifact_requirements" in skill_text
+    assert "Supplementary Table S8" in process_audit
+    assert "出版商/DOI 页面" in process_audit
+    assert "related_artifact_requirements" in input_contract
+
+
 def test_skill_documents_dynamic_results_and_precise_wording_boundaries():
     audit_policy = (SKILL / "references/audit-policy.md").read_text(encoding="utf-8")
     output_contract = (SKILL / "references/output-contract.md").read_text(encoding="utf-8")
@@ -65,13 +125,14 @@ def test_skill_documents_dynamic_results_and_precise_wording_boundaries():
     assert "无判定标准的程度词" in output_contract
 
 
-def test_skill_routes_pass_results_to_assignment_and_requires_taxonomy_search():
+def test_skill_routes_pass_results_to_draft_only_and_requires_taxonomy_search():
     skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     platform_ops = (SKILL / "references/platform-operations.md").read_text(encoding="utf-8")
     taxonomy = (SKILL / "references/taxonomy-guide.md").read_text(encoding="utf-8")
-    assert "直接执行分配审核" in skill_text
-    assert "state_code=0" in platform_ops
-    assert "state_code=1" in platform_ops
+    assert "只保存草稿" in skill_text
+    assert "不得默认分配" in skill_text
+    assert "不得调用 `cmd_review_assign_reviewers`" in platform_ops
+    assert "app_review_save_comment_draft" in platform_ops
     assert "必须实际检索" in taxonomy
     assert "记录检索词、命中候选" in taxonomy
 
@@ -113,6 +174,15 @@ def test_platform_operations_have_explicit_checkpoints_and_blacklist():
     assert "不得提交审核" in platform_ops
     assert "不得使用非分配审核员账号" in platform_ops
     assert "不得在真实平台使用创建函数探测字段" in platform_ops
+
+
+def test_platform_read_entry_uses_admin_until_draft_writeback():
+    platform_ops = (SKILL / "references/platform-operations.md").read_text(encoding="utf-8")
+    assert "查看待审核队列" in platform_ops
+    assert "默认都使用管理员账号 `admin`" in platform_ops
+    assert "只有在写回建议" in platform_ops
+    assert "`reject`" in platform_ops
+    assert "`pass`" in platform_ops
 
 
 def test_process_pass_workflow_forbids_direct_submit_comment():

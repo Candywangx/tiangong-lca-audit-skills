@@ -14,10 +14,12 @@ from tiangong_audit.integrations.tiangong_api import (
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code: int = 200):
+    def __init__(self, payload, status_code: int = 200, headers=None):
         self.payload = payload
         self.status_code = status_code
+        self.headers = headers or {}
         self.text = str(payload)
+        self.content = payload if isinstance(payload, bytes) else str(payload).encode()
 
     def json(self):
         return self.payload
@@ -30,8 +32,13 @@ class FakeSession:
 
     def request(self, method, url, **kwargs):
         self.calls.append((method, url, kwargs))
-        payload, status_code = self.responses.pop(0)
-        return FakeResponse(payload, status_code)
+        response = self.responses.pop(0)
+        if len(response) == 3:
+            payload, status_code, headers = response
+        else:
+            payload, status_code = response
+            headers = None
+        return FakeResponse(payload, status_code, headers)
 
 
 class QueuedFakeSession(FakeSession):
@@ -89,6 +96,27 @@ def test_client_loads_configuration_from_local_dotenv(tmp_path, monkeypatch):
     assert client.access_token == "dotenv-user"
 
 
+def test_client_accepts_legacy_lca_url_variable(tmp_path, monkeypatch):
+    for name in (
+        "TIANGONG_SUPABASE_URL",
+        "TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY",
+        "TIANGONG_SUPABASE_ANON_KEY",
+        "TIANGONG_SUPABASE_ACCESS_TOKEN",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / ".env").write_text(
+        "TIANGONG_LCA_SUPABASE_PUBLISHABLE_KEY=https://legacy.supabase.co\n"
+        "TIANGONG_SUPABASE_ANON_KEY=dotenv-public\n"
+        "TIANGONG_SUPABASE_ACCESS_TOKEN=dotenv-user\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    client = TiangongAPIClient()
+
+    assert client.supabase_url == "https://legacy.supabase.co"
+
+
 def test_client_loads_named_account_from_local_dotenv(tmp_path, monkeypatch):
     for name in (
         "TIANGONG_SUPABASE_URL",
@@ -116,6 +144,78 @@ def test_client_loads_named_account_from_local_dotenv(tmp_path, monkeypatch):
     assert client.access_token == "admin-token"
     assert client.email == "admin@example.com"
     assert client.password == "admin-secret"
+
+
+def test_client_loads_operation_account_roles_from_local_dotenv(tmp_path, monkeypatch):
+    for name in (
+        "TIANGONG_SUPABASE_URL",
+        "TIANGONG_SUPABASE_ANON_KEY",
+        "TIANGONG_REJECT_ACCESS_TOKEN",
+        "TIANGONG_REJECT_EMAIL",
+        "TIANGONG_REJECT_PASSWORD",
+        "TIANGONG_PASS_ACCESS_TOKEN",
+        "TIANGONG_PASS_EMAIL",
+        "TIANGONG_PASS_PASSWORD",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / ".env").write_text(
+        "TIANGONG_SUPABASE_URL=https://dotenv.supabase.co\n"
+        "TIANGONG_SUPABASE_ANON_KEY=dotenv-public\n"
+        "TIANGONG_REJECT_EMAIL=reject@example.com\n"
+        "TIANGONG_REJECT_PASSWORD=reject-secret\n"
+        "TIANGONG_PASS_EMAIL=pass@example.com\n"
+        "TIANGONG_PASS_PASSWORD=pass-secret\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    reject_client = TiangongAPIClient(account_role="reject")
+    pass_client = TiangongAPIClient(account_role="pass")
+
+    assert reject_client.email == "reject@example.com"
+    assert reject_client.password == "reject-secret"
+    assert pass_client.email == "pass@example.com"
+    assert pass_client.password == "pass-secret"
+
+
+def test_operation_account_roles_fall_back_to_fixed_accounts(tmp_path, monkeypatch):
+    for name in (
+        "TIANGONG_SUPABASE_URL",
+        "TIANGONG_SUPABASE_ANON_KEY",
+        "TIANGONG_REJECT_ACCESS_TOKEN",
+        "TIANGONG_REJECT_EMAIL",
+        "TIANGONG_REJECT_PASSWORD",
+        "TIANGONG_PASS_ACCESS_TOKEN",
+        "TIANGONG_PASS_EMAIL",
+        "TIANGONG_PASS_PASSWORD",
+        "TIANGONG_ADMIN_ACCESS_TOKEN",
+        "TIANGONG_ADMIN_EMAIL",
+        "TIANGONG_ADMIN_PASSWORD",
+        "TIANGONG_MEMBER_ACCESS_TOKEN",
+        "TIANGONG_MEMBER_EMAIL",
+        "TIANGONG_MEMBER_PASSWORD",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / ".env").write_text(
+        "TIANGONG_SUPABASE_URL=https://dotenv.supabase.co\n"
+        "TIANGONG_SUPABASE_ANON_KEY=dotenv-public\n"
+        "TIANGONG_ADMIN_ACCESS_TOKEN=admin-token\n"
+        "TIANGONG_ADMIN_EMAIL=audit-admin@example.com\n"
+        "TIANGONG_ADMIN_PASSWORD=admin-secret\n"
+        "TIANGONG_MEMBER_ACCESS_TOKEN=member-token\n"
+        "TIANGONG_MEMBER_EMAIL=audit-reviewer@example.com\n"
+        "TIANGONG_MEMBER_PASSWORD=member-secret\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    reject_client = TiangongAPIClient(account_role="reject")
+    pass_client = TiangongAPIClient(account_role="pass")
+
+    assert reject_client.access_token == "admin-token"
+    assert reject_client.email == "audit-admin@example.com"
+    assert pass_client.access_token == "member-token"
+    assert pass_client.email == "audit-reviewer@example.com"
 
 
 def test_client_uses_active_account_when_role_is_not_explicit(tmp_path, monkeypatch):
@@ -238,6 +338,45 @@ def test_bad_jwt_403_falls_back_to_account_login_and_retries():
     assert session.calls[2][2]["headers"]["Authorization"] == "Bearer fresh-token"
 
 
+def test_malformed_jwt_from_edge_function_refreshes_token_and_retries():
+    session = QueuedFakeSession(
+        (
+            {
+                "ok": False,
+                "message": (
+                    "invalid JWT: unable to parse or verify signature, token is "
+                    "malformed: could not base64 decode signature"
+                ),
+            },
+            403,
+        ),
+        ({"access_token": "fresh-token"}, 200),
+        ({"ok": True}, 200),
+    )
+    client = TiangongAPIClient(
+        supabase_url="https://example.supabase.co",
+        publishable_key="public-key",
+        access_token="malformed-token",
+        email="reviewer@example.com",
+        password="secret",
+        session=session,
+        allow_writes=True,
+    )
+
+    result = client.invoke_function(
+        "app_review_save_comment_draft",
+        {"reviewId": "review-1", "json": {"conclusion": "rejected"}},
+    )
+
+    assert result == {"ok": True}
+    assert session.calls[0][1].endswith("/functions/v1/app_review_save_comment_draft")
+    assert session.calls[1][1] == (
+        "https://example.supabase.co/auth/v1/token?grant_type=password"
+    )
+    assert session.calls[2][1].endswith("/functions/v1/app_review_save_comment_draft")
+    assert session.calls[2][2]["headers"]["Authorization"] == "Bearer fresh-token"
+
+
 def test_account_credentials_can_log_in_without_an_access_token(tmp_path, monkeypatch):
     for name in (
         "TIANGONG_SUPABASE_ACCESS_TOKEN",
@@ -351,6 +490,22 @@ def test_dataset_api_resolves_model_before_process():
     assert session.calls[0][1].endswith("/rest/v1/lifecyclemodels")
 
 
+def test_dataset_api_reads_source_by_id_and_version():
+    session = FakeSession(
+        [{"id": "source-1", "version": "01.00.000", "json": {"sourceDataSet": {}}}]
+    )
+    api = DatasetAPI(make_client(session))
+
+    result = api.get_source("source-1", "01.00.000")
+
+    assert result["id"] == "source-1"
+    method, url, kwargs = session.calls[0]
+    assert method == "GET"
+    assert url == "https://example.supabase.co/rest/v1/sources"
+    assert kwargs["params"]["id"] == "eq.source-1"
+    assert kwargs["params"]["version"] == "eq.01.00.000"
+
+
 def test_write_operations_are_disabled_by_default():
     client = make_client(FakeSession({"ok": True}))
 
@@ -398,6 +553,51 @@ def test_upload_external_doc_posts_to_storage_bucket(tmp_path):
     assert kwargs["headers"]["Content-Type"] == (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
+
+
+def test_download_external_doc_reads_storage_bucket(tmp_path):
+    output = tmp_path / "report.pdf"
+    session = FakeSession(
+        b"%PDF",
+        status_code=200,
+    )
+    session.responses = [(b"%PDF", 200, {"Content-Type": "application/pdf"})]
+    client = make_client(session)
+
+    result = client.download_external_doc("report.pdf", output)
+
+    assert output.read_bytes() == b"%PDF"
+    assert result["content_type"] == "application/pdf"
+    method, url, kwargs = session.calls[0]
+    assert method == "GET"
+    assert url == "https://example.supabase.co/storage/v1/object/external_docs/report.pdf"
+    assert kwargs["headers"]["Authorization"] == "Bearer user-token"
+
+
+def test_download_external_doc_refreshes_expired_token(tmp_path):
+    output = tmp_path / "report.pdf"
+    session = QueuedFakeSession(
+        ({"message": "JWT expired"}, 401),
+        ({"access_token": "fresh-token"}, 200),
+        (b"%PDF", 200, {"Content-Type": "application/pdf"}),
+    )
+    client = TiangongAPIClient(
+        supabase_url="https://example.supabase.co",
+        publishable_key="public-key",
+        access_token="expired-token",
+        email="reviewer@example.com",
+        password="secret",
+        session=session,
+    )
+
+    result = client.download_external_doc("report.pdf", output)
+
+    assert result["content_type"] == "application/pdf"
+    assert output.read_bytes() == b"%PDF"
+    assert session.calls[1][1] == (
+        "https://example.supabase.co/auth/v1/token?grant_type=password"
+    )
+    assert session.calls[2][2]["headers"]["Authorization"] == "Bearer fresh-token"
 
 
 def test_assign_reviewers_uses_confirmed_write_rpc():

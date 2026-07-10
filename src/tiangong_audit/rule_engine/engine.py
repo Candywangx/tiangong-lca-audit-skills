@@ -4,22 +4,40 @@ from collections import Counter
 import re
 from typing import Any
 
+from tiangong_audit.contracts.agent_review import REQUIRED_AGENT_REVIEW_RULE_IDS
+
 CORE_PROCESS_SECTIONS = ("过程信息", "建模信息", "输入/输出")
-REQUIRED_SEMANTIC_REVIEW_RULE_IDS = (
-    "process.object.consistency",
-    "process.type.boundary_match",
-    "process.boundary.cutoff_and_exclusions",
-    "process.inventory.boundary_consistency",
-    "process.inventory.key_flow_completeness",
-    "process.reference_flow.quantity_unit",
-    "process.reference_flow.annual_supply_unit",
-    "process.flow.semantic_match",
-    "process.classification.process_fit",
-    "process.description.source_content_attribution",
-    "process.source.traceability",
-    "process.representativeness.consistency",
-    "process.metadata.dqr_completeness",
-)
+# Judgment rules the Agent must explicitly review; the canonical definition
+# lives in contracts.agent_review so precheck and semantic-review stay aligned.
+REQUIRED_SEMANTIC_REVIEW_RULE_IDS = REQUIRED_AGENT_REVIEW_RULE_IDS["process"]
+RUNTIME_RULE_BINDINGS = {
+    "_check_coverage": ("process.core.input_coverage",),
+    "_check_reference_flow": (
+        "process.core.input_coverage",
+        "process.reference_flow.quantity_unit",
+    ),
+    "_check_exchange_metadata": ("process.flow.semantic_match",),
+    "_check_flow_version_identity": ("process.flow.version_identity",),
+    "_check_explicit_electricity_conflict": ("process.inventory.boundary_consistency",),
+    "_check_upstream_burden_boundary_conflict": ("process.inventory.boundary_consistency",),
+    "_check_partly_terminated_evidence": ("process.type.partly_terminated_evidence",),
+    "_check_cutoff_placeholder": ("process.boundary.cutoff_placeholder",),
+    "_check_cutoff_quantitative_criteria": ("process.boundary.cutoff_and_exclusions",),
+    "_check_lifecycle_stage_contradiction": ("process.boundary.lifecycle_stage_contradiction",),
+    "_check_reference_output_mass_attribute": ("process.reference_flow.annual_supply_unit",),
+    "_check_recycling_burden_scope": ("process.recycling.secondary_material_burden",),
+    "_check_flow_form_unit_consistency": ("process.flow.form_unit_consistency",),
+    "_check_water_boundary": ("process.inventory.water_balance_boundary",),
+    "_check_duplicate_language": ("common.language.semantic_consistency",),
+}
+
+
+def runtime_rule_ids() -> set[str]:
+    return {
+        rule_id
+        for rule_ids in RUNTIME_RULE_BINDINGS.values()
+        for rule_id in rule_ids
+    }
 
 
 def _text(value: Any) -> str:
@@ -455,36 +473,6 @@ def _check_reference_output_mass_attribute(dataset: dict[str, Any]) -> list[dict
     ]
 
 
-def _check_explicit_key_flow_absence(dataset: dict[str, Any]) -> list[dict[str, str]]:
-    context = _combined_section_text(dataset, "过程信息", "建模信息")
-    inventory_text = "\n".join(_exchange_text(exchange) for exchange in _all_exchanges(dataset))
-    expected_groups = [
-        ("饲料", r"投喂|饲料|feed", r"饲料|feed"),
-        ("网箱", r"网箱|cage|net\s*cage", r"网箱|cage|net\s*cage"),
-        ("消毒剂或消毒过程", r"消毒|disinfect", r"消毒|disinfect|氯|chlorine|次氯酸|漂白"),
-        ("海水", r"海水|seawater", r"海水|seawater"),
-        ("死亡生物或死亡率处理", r"死亡率|死亡生物|mortality", r"死亡|mortality|死鱼|dead"),
-    ]
-    missing = []
-    for label, context_pattern, inventory_pattern in expected_groups:
-        if re.search(context_pattern, context, re.IGNORECASE) and not re.search(
-            inventory_pattern, inventory_text, re.IGNORECASE
-        ):
-            missing.append(label)
-    if not missing:
-        return []
-    return [
-        _finding(
-            "process.inventory.key_flow_completeness",
-            "manual_review",
-            "过程信息 / 技术描述及背景系统 ↔ 输入/输出",
-            f"技术或边界描述提到 {'、'.join(missing)}，但清单中未识别到对应交换或处理说明。",
-            "关键投入、设施、处理过程或死亡损失未在清单中对应时，审核员无法判断边界和清单是否一致。",
-            f"补充 {'、'.join(missing)} 对应的交换，或说明其低于截断、已聚合表示或不属于本数据集边界。",
-        )
-    ]
-
-
 def _check_recycling_burden_scope(dataset: dict[str, Any]) -> list[dict[str, str]]:
     secondary_inputs = [
         item
@@ -522,61 +510,6 @@ def _check_recycling_burden_scope(dataset: dict[str, Any]) -> list[dict[str, str
     ]
 
 
-def _material_pattern(label_text: str) -> str | None:
-    candidates = [
-        r"氧气|oxygen",
-        r"碳酸钙|calcium\s+carbonate",
-        r"氯气|液氯|chlorine",
-        r"热量|热能|heat",
-    ]
-    for pattern in candidates:
-        if re.search(pattern, label_text, re.IGNORECASE):
-            return pattern
-    return None
-
-
-def _check_purchased_elementary_input_role(dataset: dict[str, Any]) -> list[dict[str, str]]:
-    context = _combined_section_text(dataset, "过程信息", "建模信息")
-    if re.search(
-        r"不代表外购|不是外购|非外购|not\s+purchased|does\s+not\s+represent\s+purchased",
-        context,
-        re.IGNORECASE,
-    ):
-        return []
-    if not re.search(
-        r"外购|采购|购买|投入品|原料|辅料|消耗品|purchased|procured|input material|auxiliary",
-        context,
-        re.IGNORECASE,
-    ):
-        return []
-
-    findings = []
-    for exchange in dataset["exchanges"]["inputs"]:
-        flow_type = str(exchange.get("flow_type") or "")
-        if not re.search(r"Elementary flow|基本流|elementary", flow_type, re.IGNORECASE):
-            continue
-        label_text = _exchange_text(exchange)
-        material_pattern = _material_pattern(label_text)
-        if not material_pattern or not re.search(material_pattern, context, re.IGNORECASE):
-            continue
-        severity = (
-            "blocking"
-            if re.search(r"外购|采购|购买|purchased|procured", context, re.IGNORECASE)
-            else "manual_review"
-        )
-        findings.append(
-            _finding(
-                "process.flow.purchased_elementary_input_role",
-                severity,
-                f"输入/输出 / {_exchange_label(exchange)}",
-                f"该输入流类型为 {flow_type}；过程说明将其描述为外购或工艺投入品。",
-                "外购投入品通常应作为产品流连接背景过程；若作为基本流，会把技术圈输入误作环境资源交换。",
-                "改选或新增匹配的产品流；若确为环境交换，补充说明其来自空气、水体或地质环境而非外购物料。",
-            )
-        )
-    return findings
-
-
 def _check_flow_form_unit_consistency(dataset: dict[str, Any]) -> list[dict[str, str]]:
     findings = []
     for exchange in _all_exchanges(dataset):
@@ -596,34 +529,6 @@ def _check_flow_form_unit_consistency(dataset: dict[str, Any]) -> list[dict[str,
                 )
             )
     return findings
-
-
-def _check_product_term_language_consistency(dataset: dict[str, Any]) -> list[dict[str, str]]:
-    zh_text = _combined_language_text(dataset, "zh")
-    en_text = _combined_language_text(dataset, "en")
-    if re.search(r"铜杆", zh_text) and re.search(r"copper\s+wire", en_text, re.IGNORECASE):
-        return [
-            _finding(
-                "common.language.semantic_consistency",
-                "blocking",
-                "中英文名称、一般性说明或输出流",
-                "中文对象或输出包含“铜杆”，英文说明出现 copper wire。",
-                "rod 和 wire 表示不同产品形态，中英文对象不一致会影响复用和检索。",
-                "将英文产品形态统一为 recycled copper rod 或与实际产品一致的表述。",
-            )
-        ]
-    if re.search(r"铜线", zh_text) and re.search(r"copper\s+rod", en_text, re.IGNORECASE):
-        return [
-            _finding(
-                "common.language.semantic_consistency",
-                "blocking",
-                "中英文名称、一般性说明或输出流",
-                "中文对象或输出包含“铜线”，英文说明出现 copper rod。",
-                "rod 和 wire 表示不同产品形态，中英文对象不一致会影响复用和检索。",
-                "将中英文产品形态统一为实际产品。",
-            )
-        ]
-    return []
 
 
 def _check_water_boundary(dataset: dict[str, Any]) -> list[dict[str, str]]:
@@ -708,7 +613,11 @@ def _conclusion(findings: list[dict[str, str]]) -> str:
     return "预检通过"
 
 
-def run_deterministic_checks(dataset: dict[str, Any]) -> dict[str, Any]:
+def run_deterministic_checks(
+    dataset: dict[str, Any],
+    *,
+    guardrails: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if dataset.get("dataset_type") != "process":
         raise ValueError("The first runtime version only supports normalized process datasets.")
     findings = [
@@ -723,14 +632,15 @@ def run_deterministic_checks(dataset: dict[str, Any]) -> dict[str, Any]:
         *_check_cutoff_quantitative_criteria(dataset),
         *_check_lifecycle_stage_contradiction(dataset),
         *_check_reference_output_mass_attribute(dataset),
-        *_check_explicit_key_flow_absence(dataset),
         *_check_recycling_burden_scope(dataset),
-        *_check_purchased_elementary_input_role(dataset),
         *_check_flow_form_unit_consistency(dataset),
-        *_check_product_term_language_consistency(dataset),
         *_check_water_boundary(dataset),
         *_check_duplicate_language(dataset),
     ]
+    if guardrails:
+        from .guardrails import run_guardrails
+
+        findings.extend(run_guardrails(dataset, guardrails))
     return {
         "schema_version": "tiangong-audit-findings-v1",
         "dataset": dataset["identity"],

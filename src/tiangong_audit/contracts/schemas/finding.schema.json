@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiangong-audit.local/schemas/finding.schema.json",
+  "title": "Tiangong Audit Finding",
+  "type": "object",
+  "required": ["schema_version", "rule_id", "severity", "location", "evidence", "judgment", "suggestion"],
+  "properties": {
+    "schema_version": {"const": "tiangong-audit-finding-v1"},
+    "rule_id": {"type": "string"},
+    "severity": {"enum": ["blocking", "advisory", "manual_review", "input_gap"]},
+    "location": {"type": "string"},
+    "evidence": {"type": "string"},
+    "judgment": {"type": "string"},
+    "suggestion": {"type": "string"},
+    "source": {"type": "string"}
+  },
+  "additionalProperties": false
+}

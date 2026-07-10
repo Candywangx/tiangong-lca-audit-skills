@@ -33,6 +33,7 @@
 - 关键输入/输出流的流类型、分类、参考单位、参考属性和中英文名称。
 - raw TIDAS 输入中的交换流 UUID、版本、交换短描述、底层 flow 数据集名称、流类型、分类、参考属性和参考单位；交换短描述缺中文与底层 flow 数据集本身缺中文必须分开记录。
 - 来源数据集、背景报告、完整审查报告和数据处理说明。
+- source 原文、PDF 页码证据、下载或抽取状态，以及 source 中可直接支持或否定当前数据集字段的摘录。
 - 当前分类路径，以及分类判断时实际检索到的候选分类。
 - 关联背景过程或已终止过程说明；当数据集类型为 `Partly terminated system` 或 `LCI result` 时尤其必须取得。
 
@@ -71,3 +72,16 @@
 - 分类合理性、关键流完整性和工艺边界属于语义审核，不因程序未发现问题而视为通过。
 - 数据集类型、回收建模口径、分配方法、截断和水边界属于核心语义审核；若输入缺少必要证据，输出信息不足或人工确认。
 - 程序预检结论必须使用“预检”前缀，不得冒充完整审核结论。
+
+## 7. Source 核验输入
+
+source 核验材料可以包括：
+
+- `source-refs.json`：从数据集解析出的 source 引用。
+- `sources/*/manifest.json`：source 下载、hash、抽取状态、错误信息，以及 `related_artifact_requirements` 中列出的补充材料追踪要求。PDF/Office/图片或复杂表格 source 应使用项目内 `skill/document-granular-decompose` 生成 image-aware 全文，并把该全文作为当前 case 的 source 证据保存。
+- `sources/*/extracted.md`：PDF、文本或 JSON source 的抽取文本。
+- PDF/全文、补充材料、附录、source table、raw import 表或工程资料的本地路径、URL、checksum 或受控附件位置。
+- `source-checks/claims.json`：程序抽取的待核验字段清单，只是 Agent source 语义核验的输入，不是核验结论；过程数据必须把所有输入/输出交换的方向、名称、数量和单位等可见字段纳入 claims，不得只抽取参考流。
+- `source-checks/checks.json`：Agent 或人工阅读数据集字段与 source 原文后写出的字段级语义核验状态；不得由字符串匹配程序自动生成最终结论。
+
+只有 source 摘录、页码、表名、附录或可复核换算链能直接支持的内容，才能作为 source 证据。若字段依赖补充表或 source table，但当前只取得主文 PDF，应记录缺失的具体字段，例如 amount、unit basis、qref、flow identity、location/year、boundary 或 allocation；不得把 source 不可用、补充表缺失或字段未命中解释为来源已通过。

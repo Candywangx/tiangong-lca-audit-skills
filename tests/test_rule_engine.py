@@ -4,10 +4,16 @@ from pathlib import Path
 from tiangong_audit.normalizer import normalize_dataset
 from tiangong_audit.report import markdown as report_markdown
 from tiangong_audit.report.markdown import render_findings
-from tiangong_audit.rule_engine import run_deterministic_checks
+from tiangong_audit.rule_engine import (
+    guardrail_rule_ids,
+    load_skill_guardrails,
+    run_deterministic_checks,
+    runtime_rule_ids,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/projected-api"
+GUARDRAILS = load_skill_guardrails(ROOT)
 
 
 def synthetic_process_dataset(
@@ -144,7 +150,11 @@ def rule_ids(result: dict) -> set[str]:
 
 def rule_asset_ids() -> set[str]:
     ids: set[str] = set()
-    for path in (ROOT / "skill/tiangong-lca-audit/rules").glob("*.json"):
+    for path in [
+        ROOT / "skill/tiangong-lca-audit/rules/common.json",
+        ROOT / "skill/tiangong-lca-audit/rules/process.json",
+        ROOT / "skill/tiangong-lca-audit/rules/model.json",
+    ]:
         payload = json.loads(path.read_text(encoding="utf-8"))
         ids.update(rule["id"] for rule in payload["rules"])
     return ids
@@ -192,7 +202,13 @@ def test_program_findings_use_registered_rule_ids():
     oxygen["flow_type"] = "Elementary flow"
     oxygen["classification"] = [{"name": "Resources from air"}]
 
-    assert rule_ids(run_deterministic_checks(dataset)) <= rule_asset_ids()
+    assert rule_ids(run_deterministic_checks(dataset, guardrails=GUARDRAILS)) <= rule_asset_ids()
+
+
+def test_program_findings_use_runtime_rule_bindings():
+    result = check("process-audit-input-noapproved-projected.json")
+
+    assert rule_ids(result) <= runtime_rule_ids()
 
 
 def test_copper_recycling_fixture_triggers_semantic_guardrails():
@@ -208,7 +224,7 @@ def test_copper_recycling_fixture_triggers_semantic_guardrails():
         water_scope_zh="",
     )
 
-    result = run_deterministic_checks(dataset)
+    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
 
     assert {
         "process.type.partly_terminated_evidence",
@@ -235,7 +251,7 @@ def test_documented_copper_recycling_fixture_avoids_new_guardrails():
         cutoff_en="The dataset applies 1% single-flow and 5% cumulative cut-off criteria with at least 95% coverage.",
     )
 
-    result = run_deterministic_checks(dataset)
+    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
 
     assert not {
         "process.type.partly_terminated_evidence",
@@ -302,7 +318,7 @@ def test_purchased_elementary_inputs_trigger_flow_role_finding():
         }
     )
 
-    result = run_deterministic_checks(dataset)
+    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
     findings = [
         item
         for item in result["findings"]
@@ -347,7 +363,7 @@ def test_environmental_elementary_input_is_not_rewritten_as_product_flow():
     oxygen["flow_type"] = "Elementary flow"
     oxygen["classification"] = [{"name": "Resources from water"}]
 
-    result = run_deterministic_checks(dataset)
+    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
 
     assert "process.flow.purchased_elementary_input_role" not in rule_ids(result)
 
@@ -365,7 +381,7 @@ def test_explicit_aquaculture_requirements_missing_from_inventory_create_finding
         item for item in dataset["exchanges"]["inputs"] if "自来水" in item["name"]["zh"]
     ]
 
-    result = run_deterministic_checks(dataset)
+    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
 
     assert "process.inventory.key_flow_completeness" in rule_ids(result)
     finding = next(
@@ -385,7 +401,7 @@ def test_platform_return_opinion_uses_only_actionable_findings():
     )
     dataset["exchanges"]["inputs"][1]["flow_type"] = "Elementary flow"
     dataset["exchanges"]["inputs"][1]["classification"] = [{"name": "Resources from air"}]
-    result = run_deterministic_checks(dataset)
+    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
 
     opinion = report_markdown.render_platform_return_opinion(result)
 
@@ -393,3 +409,39 @@ def test_platform_return_opinion_uses_only_actionable_findings():
     assert "①" in opinion
     assert "规则" not in opinion
     assert "process.boundary.cutoff_placeholder" not in opinion
+
+
+def test_engine_without_guardrails_keeps_only_structural_checks():
+    dataset = synthetic_process_dataset(
+        dataset_type="Unit process, black box",
+        general_zh="本数据集使用外购氧气作为投入品。",
+        general_en="The dataset uses purchased oxygen as an input.",
+        technology_zh="养殖过程需要投喂饲料，使用网箱，定期消毒，并记录死亡率。",
+        technology_en="The process uses feed, cages, disinfection, and records mortality.",
+        cutoff_zh="本数据集采用 1% 单项和 5% 累计截断原则，覆盖率不低于 95%。",
+        cutoff_en="The dataset applies 1% single-flow and 5% cumulative cut-off criteria.",
+    )
+    dataset["exchanges"]["inputs"][1]["flow_type"] = "Elementary flow"
+    dataset["identity"]["name"]["en"] = "Recycled copper wire manufacturing"
+
+    result = run_deterministic_checks(dataset)
+
+    ids = rule_ids(result)
+    assert "process.inventory.key_flow_completeness" not in ids
+    assert "process.flow.purchased_elementary_input_role" not in ids
+    # The copper rod/wire term pair now lives in guardrails, not in the engine.
+    assert not any(
+        "铜杆" in item["evidence"] and "copper wire" in item["evidence"]
+        for item in result["findings"]
+    )
+
+
+def test_guardrail_rule_ids_are_registered_in_catalog():
+    assert GUARDRAILS is not None
+    assert guardrail_rule_ids(GUARDRAILS) <= rule_asset_ids()
+
+
+def test_guardrail_entries_declare_origin_cases():
+    assert GUARDRAILS is not None
+    for entry in GUARDRAILS["guardrails"]:
+        assert entry["origin_case"]

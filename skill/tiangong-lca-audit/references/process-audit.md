@@ -84,6 +84,26 @@
 - 是否有精度、完整性、一致性或 DQR 信息；缺失时不机械阻断，但若无法判断代表性或复用范围，应列为人工确认。
 - 是否有目标用途、限制、受众、比较使用说明、委托方或拥有者。
 - 是否能追溯数据来源、背景报告、审查报告、数据生成者、建模者或文档编制者；已有等效来源和拥有者时不要重复驳回。
+- source 原文是否支持当前数据集的边界、年份、地区、技术路线、关键输入输出、截断和数据处理说明；若 source 只是项目背景、参数来源或 LCIA 结果，必须区分其与当前数据集自身建模内容。
+
+source 核验由 Agent 语义判断完成，不由程序字符串匹配完成。执行步骤：
+
+1. 先确认已取得可读的 PDF、全文、附录、source table、raw import 表或工程资料。对 PDF、Office、图片或复杂表格材料，必须直接调用项目内 `skill/document-granular-decompose` 生成 image-aware 全文；仅有 `pypdf` 抽取文本时，复杂表格、图片和补充材料相关事实不得视为已完整抽取。必须检查 `sources/*/manifest.json` 的 `related_artifact_requirements`，并主动检索主文中的 Supplementary Table、appendix、supporting information、source table 等引用；若主文指向 Supplementary Table S8 这类补充表但文件未取得，应继续从平台 source dataset、出版商/DOI 页面或文中 URL 获取。无法取得时记录缺失的具体字段，不得把主文未包含的数值判为已支持。
+2. 读取 `source-checks/claims.json` 中待核验字段；claims 必须覆盖所有输入/输出交换，而不只是参考流。没有 claims 或发现 claims 漏掉交换时，从数据集名称、路线、位置、年份、数据集类型、技术描述、参考流和全部关键清单自行补充待核验字段。
+3. 对每个字段同时读取数据集字段值、字段所在窗口说明、source 摘录或 PDF 原文上下文；必要时在 `sources/*/extracted.md` 中继续检索同义词、参数、表格标题和上下文。
+4. 将字段拆成可核查事实，例如对象、数量、单位口径、基准流或 qref、流身份、地区、年份、技术路线、边界、分配、截断和数据处理口径；不要要求 source 出现平台字段的完整显示字符串。
+5. 对表格或数值证据，记录原文表名、页码或 appendix、原始字段、原始单位、原始值、目标字段、换算规则和换算后值；例如 `t -> kg` 不能只在聊天中解释。
+6. 逐项判断 source 是否支持这些事实，并记录 source ID、页码或表名、摘录、判断理由和状态。
+
+source 核验结论分为：
+
+- `matched`：source 原文内容能直接支持当前字段事实；允许中英文翻译、同义表达、表格表达或顺序不同。
+- `conflict`：source 与当前字段存在直接冲突，例如数值、单位、对象、地区、年份、边界或数据处理口径不一致。
+- `not_found`：source 已抽取并已检索相关上下文，但没有找到当前字段事实的支持证据。
+- `ambiguous`：source 有相关信息，但不足以确认是否支持当前字段，例如只支持项目背景、不支持当前建模口径，或缺少补充表/处理说明。
+- `source_unavailable` 或 `extraction_failed`：无法完成核验，只能限制结论或列为信息缺口。
+
+不得把整段字段值的字符串命中、关键词命中或程序生成的候选结果当作最终 source 结论。程序只能准备待核验字段和 source 文本；最终 `matched`、`conflict`、`ambiguous`、`not_found` 必须来自 Agent 对文章和数据集的语义阅读。
 
 ## 6. 跨窗口一致性矩阵
 

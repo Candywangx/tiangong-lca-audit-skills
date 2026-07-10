@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "description": "Case-derived deterministic guardrails. Each entry was distilled from a concrete correction case (origin_case) and is scoped by explicit patterns. New corrections are added here as data plus an eval case in tests/evals/, never as engine code. These guardrails do not replace Agent review of the bound rule_id; they only surface known past mistakes early.",
+  "guardrails": [
+    {
+      "id": "guardrail.aquaculture.key_flows",
+      "type": "context_expected_inventory",
+      "rule_id": "process.inventory.key_flow_completeness",
+      "severity": "manual_review",
+      "origin_case": "abalone-farming-2026",
+      "groups": [
+        {
+          "label": "饲料",
+          "context_pattern": "投喂|饲料|feed",
+          "inventory_pattern": "饲料|feed"
+        },
+        {
+          "label": "网箱",
+          "context_pattern": "网箱|cage|net\\s*cage",
+          "inventory_pattern": "网箱|cage|net\\s*cage"
+        },
+        {
+          "label": "消毒剂或消毒过程",
+          "context_pattern": "消毒|disinfect",
+          "inventory_pattern": "消毒|disinfect|氯|chlorine|次氯酸|漂白"
+        },
+        {
+          "label": "海水",
+          "context_pattern": "海水|seawater",
+          "inventory_pattern": "海水|seawater"
+        },
+        {
+          "label": "死亡生物或死亡率处理",
+          "context_pattern": "死亡率|死亡生物|mortality",
+          "inventory_pattern": "死亡|mortality|死鱼|dead"
+        }
+      ]
+    },
+    {
+      "id": "guardrail.copper.rod_wire_terms",
+      "type": "bilingual_term_mismatch",
+      "rule_id": "common.language.semantic_consistency",
+      "severity": "blocking",
+      "origin_case": "recycled-copper-rod-2026",
+      "pairs": [
+        {
+          "zh_pattern": "铜杆",
+          "en_pattern": "copper\\s+wire",
+          "zh_label": "铜杆",
+          "en_label": "copper wire",
+          "suggestion": "将英文产品形态统一为 recycled copper rod 或与实际产品一致的表述。"
+        },
+        {
+          "zh_pattern": "铜线",
+          "en_pattern": "copper\\s+rod",
+          "zh_label": "铜线",
+          "en_label": "copper rod",
+          "suggestion": "将中英文产品形态统一为实际产品。"
+        }
+      ]
+    },
+    {
+      "id": "guardrail.purchased_elementary_materials",
+      "type": "purchased_elementary_input_role",
+      "rule_id": "process.flow.purchased_elementary_input_role",
+      "origin_case": "abalone-farming-2026",
+      "material_patterns": [
+        "氧气|oxygen",
+        "碳酸钙|calcium\\s+carbonate",
+        "氯气|液氯|chlorine",
+        "热量|热能|heat"
+      ]
+    }
+  ]
+}

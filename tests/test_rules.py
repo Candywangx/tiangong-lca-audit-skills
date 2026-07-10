@@ -1,6 +1,12 @@
 import json
 from pathlib import Path
 
+from tiangong_audit.rule_engine import (
+    RUNTIME_RULE_BINDINGS,
+    runtime_rule_ids,
+    validate_guardrails,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 RULES = ROOT / "skill/tiangong-lca-audit/rules"
 REQUIRED_RULE_FIELDS = {
@@ -20,7 +26,8 @@ CFIA_SOURCE = "CFIA-LCA-database-guideline"
 
 
 def load_rules():
-    return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(RULES.glob("*.json"))]
+    rule_paths = [RULES / name for name in ("common.json", "process.json", "model.json")]
+    return [json.loads(path.read_text(encoding="utf-8")) for path in rule_paths]
 
 
 def test_rule_catalog_is_single_and_structured():
@@ -44,6 +51,15 @@ def test_rule_catalog_is_single_and_structured():
     assert len(ids) == len(set(ids))
 
 
+def test_rule_catalog_has_explicit_schema_asset():
+    schema = json.loads((RULES / "schema.json").read_text(encoding="utf-8"))
+
+    assert schema["title"] == "Tiangong LCA Audit Rule Catalog"
+    assert "rule" in schema["$defs"]
+    required_rule_fields = set(schema["$defs"]["rule"]["required"])
+    assert REQUIRED_RULE_FIELDS <= required_rule_fields
+
+
 def test_process_and_model_define_core_dimensions():
     payloads = {payload["dataset_type"]: payload for payload in load_rules()}
     assert len(payloads["process"]["core_dimensions"]) >= 5
@@ -54,6 +70,9 @@ def test_process_rules_cover_source_content_attribution():
     payloads = {payload["dataset_type"]: payload for payload in load_rules()}
     rule_ids = {rule["id"] for rule in payloads["process"]["rules"]}
     assert "process.description.source_content_attribution" in rule_ids
+    assert "process.source.document_availability" in rule_ids
+    assert "process.source.field_conflict" in rule_ids
+    assert "process.source.field_not_supported" in rule_ids
 
 
 def test_classification_rules_require_candidate_paths_or_ranges():
@@ -95,3 +114,23 @@ def test_process_rules_cover_cfia_guideline_gaps():
         assert rule_id in process_rules
         files = {ref["file"] for ref in process_rules[rule_id].get("standard_refs", [])}
         assert source_file in files
+
+
+def test_runtime_rule_bindings_point_to_registered_rules():
+    rule_ids = {
+        rule["id"]
+        for payload in load_rules()
+        for rule in payload["rules"]
+    }
+
+    assert RUNTIME_RULE_BINDINGS
+    assert runtime_rule_ids() <= rule_ids
+
+
+def test_guardrail_catalog_is_structurally_valid():
+    payload = json.loads((RULES / "guardrails.json").read_text(encoding="utf-8"))
+    assert validate_guardrails(payload) == []
+    # Guardrails are case-derived: every entry must name its origin case so a
+    # future maintainer can trace it back to the correction record.
+    for entry in payload["guardrails"]:
+        assert entry["origin_case"]

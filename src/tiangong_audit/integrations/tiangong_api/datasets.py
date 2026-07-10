@@ -13,6 +13,9 @@ PROCESS_COLUMNS = (
 MODEL_COLUMNS = (
     "id,version,json,json_tg,modified_at,state_code,rule_verification,team_id,reviews"
 )
+SOURCE_COLUMNS = (
+    "id,version,json,json_ordered,modified_at,state_code,rule_verification,user_id"
+)
 
 
 class DatasetAPI:
@@ -46,6 +49,21 @@ class DatasetAPI:
 
     def get_model(self, dataset_id: str, version: str) -> dict[str, Any]:
         return self.get_dataset(dataset_id, version, DatasetType.MODEL)
+
+    def get_source(self, source_id: str, version: str = "") -> dict[str, Any]:
+        filters = {"id": f"eq.{source_id}"}
+        if version:
+            filters["version"] = f"eq.{version}"
+        rows = self.client.select(
+            "sources",
+            columns=SOURCE_COLUMNS,
+            filters=filters,
+            limit=1,
+        )
+        if not rows:
+            version_label = f" {version}" if version else ""
+            raise TiangongAPIError(f"source dataset not found: {source_id}{version_label}")
+        return rows[0]
 
     def resolve_dataset(self, dataset_id: str, version: str) -> dict[str, Any]:
         """Identify a task dataset and return its platform payload."""

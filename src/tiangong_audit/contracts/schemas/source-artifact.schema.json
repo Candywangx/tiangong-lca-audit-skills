@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiangong-audit.local/schemas/source-artifact.schema.json",
+  "title": "Tiangong Audit Source Artifact",
+  "type": "object",
+  "required": ["schema_version", "ref", "status"],
+  "properties": {
+    "schema_version": {"const": "tiangong-audit-source-v1"},
+    "ref": {"type": "object"},
+    "status": {"type": "string"},
+    "file_path": {"type": "string"},
+    "content_type": {"type": "string"},
+    "sha256": {"type": "string"},
+    "downloaded_at": {"type": "string"},
+    "extracted_text_path": {"type": "string"},
+    "error": {"type": "string"},
+    "related_artifact_requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "reference", "status", "action"],
+        "properties": {
+          "kind": {"type": "string"},
+          "reference": {"type": "string"},
+          "status": {"type": "string"},
+          "action": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
