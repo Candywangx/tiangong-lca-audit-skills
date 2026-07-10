@@ -11,8 +11,8 @@
       "groups": [
         {
           "label": "饲料",
-          "context_pattern": "投喂|饲料|feed",
-          "inventory_pattern": "饲料|feed"
+          "context_pattern": "投喂|饲料|\\bfeeds?\\b(?!ing)",
+          "inventory_pattern": "饲料|\\bfeeds?\\b"
         },
         {
           "label": "网箱",

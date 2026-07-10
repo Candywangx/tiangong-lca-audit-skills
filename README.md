@@ -27,6 +27,8 @@ cases/      本地真实案件，默认不提交
 
 ## 人工审核使用流程
 
+第一次接触本项目？先看 10 分钟版 [docs/quickstart.md](docs/quickstart.md)。
+
 ### 1. 首次准备
 
 复制 `.env.example` 为本地 `.env`，只在 `.env` 里填写真实配置；不要把 token 写进

@@ -445,3 +445,20 @@ def test_guardrail_entries_declare_origin_cases():
     assert GUARDRAILS is not None
     for entry in GUARDRAILS["guardrails"]:
         assert entry["origin_case"]
+
+
+def test_feeding_in_english_tech_text_does_not_trigger_aquaculture_guardrail():
+    # Regression from a real ternary-cathode case: "closed feeding and mixing"
+    # (投料) must not match the aquaculture 饲料/feed guardrail.
+    dataset = synthetic_process_dataset(
+        general_zh="本数据集描述三元正极材料生产过程。",
+        general_en="This dataset describes ternary cathode material production.",
+        technology_zh="氢氧化锂与三元前驱体密闭投料和混合，随后辊道窑烧结。",
+        technology_en="Closed feeding and mixing of lithium hydroxide and precursor, followed by kiln sintering.",
+        cutoff_zh="本数据集采用 1% 单项和 5% 累计截断原则，覆盖率不低于 95%。",
+        cutoff_en="The dataset applies 1% single-flow and 5% cumulative cut-off criteria.",
+    )
+
+    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
+
+    assert "process.inventory.key_flow_completeness" not in rule_ids(result)
