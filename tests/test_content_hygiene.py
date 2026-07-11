@@ -11,6 +11,8 @@ BANNED_TEXT = {
     "references/report-examples",
     "styles/approved-",
     "placeholder for future",
+    "可将有明确修改价值的阻断问题、建议修改和人工确认项合并进平台意见",
+    "以上【建议】项不作为本轮通过前提，可结合本次修改一并完善。",
 }
 
 

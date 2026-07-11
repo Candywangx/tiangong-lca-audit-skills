@@ -54,7 +54,14 @@ def test_approval_report_instructions_require_chinese_scope_and_current_date():
 def test_audit_result_template_has_copy_ready_platform_feedback():
     text = (SKILL / "assets/audit-result-template.md").read_text(encoding="utf-8")
     assert "## 平台退回意见" in text
-    assert "①{位置} 中" in text
+    assert "①{平台标签}{完整定位 + 证据 + 判断 + 动作}" in text
+    assert "②{平台标签}{完整定位 + 证据 + 判断 + 动作}" in text
+    assert "③{平台标签}{完整定位 + 证据 + 判断 + 动作}" in text
+    assert "{意见条数按实际路由结果增减。}" in text
+    assert "{通过态写法见 output-contract.md。}" in text
+    assert "{含 suggested 项时，追加 output-contract.md 规定的免责声明。}" in text
+    assert "通过时填写“无”" not in text
+    assert "不作为本轮" not in text
 
 
 def test_output_contract_defines_copy_ready_platform_feedback():

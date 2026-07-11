@@ -101,9 +101,12 @@ source 核验结论分为：
 - `conflict`：source 与当前字段存在直接冲突，例如数值、单位、对象、地区、年份、边界或数据处理口径不一致。
 - `not_found`：source 已抽取并已检索相关上下文，但没有找到当前字段事实的支持证据。
 - `ambiguous`：source 有相关信息，但不足以确认是否支持当前字段，例如只支持项目背景、不支持当前建模口径，或缺少补充表/处理说明。
-- `source_unavailable` 或 `extraction_failed`：无法完成核验，只能限制结论或列为信息缺口。
+- `source_unavailable`、`download_failed` 或 `extraction_failed`：source 无法取得、下载失败或抽取失败，无法完成核验，只能限制结论或列为信息缺口。
+- `not_applicable`：该 claim 经核实不适用于当前字段或建模对象，不形成发现。
 
-不得把整段字段值的字符串命中、关键词命中或程序生成的候选结果当作最终 source 结论。程序只能准备待核验字段和 source 文本；最终 `matched`、`conflict`、`ambiguous`、`not_found` 必须来自 Agent 对文章和数据集的语义阅读。
+不得把整段字段值的字符串命中、关键词命中或程序生成的候选结果当作最终 source 结论。程序只能准备待核验字段和 source 文本；最终 `matched`、`conflict`、`ambiguous`、`not_found`、`not_applicable` 必须来自 Agent 对文章和数据集的语义阅读。
+
+完成状态判断后，再根据该字段是否核心、证据缺口能否改变结论以及修改价值确定发现影响；不得仅凭 `status` 推导 `severity`。例如，参考年依据未在 source 中找到但不影响当前代表性判断时可以是 `advisory`；关键边界与 source 直接冲突时才是 `blocking`。状态/严重程度的合法输入组合见 `input-contract.md`，严重程度的结论影响见 `audit-policy.md`，是否传达给提交者见 `output-contract.md`。
 
 ## 6. 跨窗口一致性矩阵
 

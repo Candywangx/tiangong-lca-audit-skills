@@ -206,3 +206,149 @@ def test_skill_frontmatter_mentions_process_pass_workflow_trigger():
     header = skill_text.split("---", 2)[1]
     assert "过程数据通过流程" in header
     assert "平台暂存" in header
+
+
+def test_output_contract_defines_platform_opinion_routing_vocabulary():
+    output_contract = (SKILL / "references/output-contract.md").read_text(
+        encoding="utf-8"
+    )
+
+    for disposition in ("required", "clarification", "suggested", "internal_only"):
+        assert f"`{disposition}`" in output_contract
+    for label in ("【需修改】", "【请补充】", "【建议】"):
+        assert label in output_contract
+
+
+def test_platform_opinion_keeps_suggestions_non_blocking_and_pass_opinion_empty():
+    output_contract = (SKILL / "references/output-contract.md").read_text(
+        encoding="utf-8"
+    )
+    platform_ops = (SKILL / "references/platform-operations.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "【建议】不能单独导致驳回" in output_contract
+    assert "审核结论为“通过”时，平台退回意见必须为“无”" in output_contract
+    assert "平台退回意见为“无”" in platform_ops
+    footer = "以上【建议】项用于改善数据说明，不作为本轮审核通过的前置条件。"
+    policy, example = output_contract.split("示例：", 1)
+    assert footer in policy
+    assert footer in example
+
+
+def test_output_contract_has_one_proportionality_gate_for_submitter_feedback():
+    output_contract = (SKILL / "references/output-contract.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "### 比例性筛选（唯一准入标准）" in output_contract
+    gate = output_contract.split("### 比例性筛选（唯一准入标准）", 1)[1].split(
+        "平台退回意见的写法：", 1
+    )[0]
+    for requirement in (
+        "提交者能够处理",
+        "有可见证据",
+        "修改动作或确认边界具体",
+        "预期质量收益与提交者成本相称",
+        "不是已有意见的重复或汇总",
+        "不要求提交者虚构",
+    ):
+        assert requirement in gate
+    assert "低收益的 `advisory` 必须保持 `internal_only`" in gate
+
+
+def test_platform_opinion_example_distinguishes_suggestion_from_core_clarification():
+    output_contract = (SKILL / "references/output-contract.md").read_text(
+        encoding="utf-8"
+    )
+    example = output_contract.split("示例：", 1)[1]
+
+    assert "③【建议】过程信息 / 参考年份" in example
+    assert "【请补充】建模信息 / 数据集类型" in example
+    assert "回答会影响数据集类型和审核结论" in example
+    assert "【请补充】过程信息 / 参考年份" not in example
+
+
+def test_platform_opinion_example_orders_required_clarification_then_suggestions():
+    output_contract = (SKILL / "references/output-contract.md").read_text(
+        encoding="utf-8"
+    )
+    example_section = output_contract.split("示例：", 1)[1]
+    example_block = example_section.split("```text", 1)[1].split("```", 1)[0]
+
+    assert "①【需修改】" in example_block
+    assert "②【请补充】" in example_block
+    assert "③【建议】" in example_block
+    assert "④【建议】" in example_block
+    assert example_block.index("①【需修改】") < example_block.index("②【请补充】")
+    assert example_block.index("②【请补充】") < example_block.index("③【建议】")
+    assert example_block.index("③【建议】") < example_block.index("④【建议】")
+
+
+def test_internal_pipeline_gaps_always_invalidate_platform_comment():
+    output_contract = (SKILL / "references/output-contract.md").read_text(
+        encoding="utf-8"
+    )
+
+    for origin in ("semantic_context", "validation", "extraction", "workflow"):
+        assert f"`{origin}`" in output_contract
+    assert "即使同时存在 `required`" in output_contract
+    assert "`platform_comment.valid=false`" in output_contract
+    assert "阻止保存草稿" in output_contract
+
+
+def test_source_contract_separates_evidence_status_from_audit_impact():
+    audit_policy = (SKILL / "references/audit-policy.md").read_text(encoding="utf-8")
+    input_contract = (SKILL / "references/input-contract.md").read_text(
+        encoding="utf-8"
+    )
+    process_audit = (SKILL / "references/process-audit.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "source `status` 只描述证据核验结果" in input_contract
+    assert "`severity` 描述对审核结论的影响" in input_contract
+    assert "`status` 与 `severity` 含义不同，不得混用" in input_contract
+    assert "`severity` 可以显式填写；未填写时按下表默认值解析" in input_contract
+    assert "不得仅凭 `status` 推导 `severity`" in process_audit
+    assert (
+        "最终 `matched`、`conflict`、`ambiguous`、`not_found`、`not_applicable`"
+        in process_audit
+    )
+    assert "source 核验状态不等于发现类型" in audit_policy
+    assert "`download_failed`" in input_contract
+    assert "`download_failed`" in process_audit
+
+
+def test_source_check_contract_names_code_required_and_quality_fields():
+    input_contract = (SKILL / "references/input-contract.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "代码必填字段" in input_contract
+    for field in ("field", "dataset_value", "source_ref_id", "status"):
+        assert f"`{field}`" in input_contract
+    assert "高质量核验内容" in input_contract
+    for field in ("evidence", "page", "notes", "confidence_reason"):
+        assert f"`{field}`" in input_contract
+    assert "至少包含 claim" not in input_contract
+
+
+def test_platform_operations_require_human_confirmation_before_any_write():
+    platform_ops = (SKILL / "references/platform-operations.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "任何平台写入都必须在人工确认之后执行" in platform_ops
+    assert "生成平台退回意见不等于授权保存草稿" in platform_ops
+
+
+def test_non_pass_operations_use_validated_platform_comment_without_rerouting():
+    platform_ops = (SKILL / "references/platform-operations.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "读取并确认已验证的 `platform_comment`" in platform_ops
+    assert "不得在操作阶段按 `severity` 重新筛选" in platform_ops
+    assert "汇总已验证的阻断问题" not in platform_ops
+    assert "将建议修改与阻断问题分开" not in platform_ops

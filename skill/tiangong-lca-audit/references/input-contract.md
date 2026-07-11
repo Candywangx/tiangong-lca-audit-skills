@@ -85,3 +85,16 @@ source 核验材料可以包括：
 - `source-checks/checks.json`：Agent 或人工阅读数据集字段与 source 原文后写出的字段级语义核验状态；不得由字符串匹配程序自动生成最终结论。
 
 只有 source 摘录、页码、表名、附录或可复核换算链能直接支持的内容，才能作为 source 证据。若字段依赖补充表或 source table，但当前只取得主文 PDF，应记录缺失的具体字段，例如 amount、unit basis、qref、flow identity、location/year、boundary 或 allocation；不得把 source 不可用、补充表缺失或字段未命中解释为来源已通过。
+
+`source-checks/checks.json` 中，代码必填字段只有 `field`、`dataset_value`、`source_ref_id` 和 `status`。其中 source `status` 只描述证据核验结果，`severity` 描述对审核结论的影响；`status` 与 `severity` 含义不同，不得混用。`severity` 可以显式填写；未填写时按下表默认值解析。
+
+高质量核验内容还应在证据可得时填写 `evidence`、`page`、`notes` 和 `confidence_reason`，并可使用 `checked_source_id`、`matched_excerpt`、`rule_id` 与 `extra` 保留定位和换算信息。这些内容要求用于提高可复核性，不等同于代码必填字段；证据不可取得时应在相应字段说明原因，不得虚构摘录或页码。允许的状态/严重程度组合为：
+
+| `status` | 允许的 `severity` | 未显式填写时的默认值 |
+| --- | --- | --- |
+| `matched`、`not_applicable` | 无，不形成发现 | 无 |
+| `conflict` | `blocking`、`advisory` | `blocking` |
+| `ambiguous`、`not_found` | `manual_review`、`advisory` | `manual_review` |
+| `source_unavailable`、`download_failed`、`extraction_failed` | `input_gap`、`manual_review`、`advisory` | `input_gap` |
+
+不在表中的状态/严重程度组合属于输入契约错误，不能静默改写。是否把该发现传达给提交者使用独立的 `platform` 路由字段，其结构与约束只在 `output-contract.md` 定义。
