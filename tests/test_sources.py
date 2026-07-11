@@ -1,6 +1,8 @@
 import json
 
-from tiangong_audit.contracts import SourceRef
+from tiangong_audit.contracts import SourceCheck, SourceRef
+from tiangong_audit.contracts.platform import PlatformProjection
+from tiangong_audit.contracts.source import validate_source_checks
 from tiangong_audit.sources import (
     download_platform_external_doc,
     download_source_artifact,
@@ -11,6 +13,276 @@ from tiangong_audit.sources import (
 )
 from tiangong_audit.case_store import CaseStore
 from tiangong_audit.workflows import attach_extraction, fetch_sources
+
+
+def _source_check_payload(status, **overrides):
+    payload = {
+        "field": "process.time.referenceYear",
+        "dataset_value": "2021",
+        "source_ref_id": "source-1",
+        "status": status,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_source_check_defaults_severity_by_status():
+    expected = {
+        "matched": None,
+        "not_applicable": None,
+        "conflict": "blocking",
+        "ambiguous": "manual_review",
+        "not_found": "manual_review",
+        "source_unavailable": "input_gap",
+        "download_failed": "input_gap",
+        "extraction_failed": "input_gap",
+    }
+
+    for status, severity in expected.items():
+        check = SourceCheck.from_dict(_source_check_payload(status))
+        assert check.resolved_severity() == severity
+
+
+def test_source_check_platform_round_trip():
+    original = SourceCheck(
+        field="process.time.referenceYear",
+        dataset_value="2021",
+        source_ref_id="source-1",
+        status="conflict",
+        severity="blocking",
+        platform=PlatformProjection(
+            disposition="required",
+            message="请修正参考年，或补充来源依据。",
+        ),
+    )
+
+    restored = SourceCheck.from_dict(original.to_dict())
+
+    assert restored.severity == "blocking"
+    assert restored.platform == original.platform
+    assert restored.to_dict() == original.to_dict()
+
+
+def test_source_check_full_field_round_trip_and_legacy_positional_order():
+    legacy = SourceCheck(
+        "process.name.zh",
+        "叶片制造",
+        "source-1",
+        "ambiguous",
+        "来源仅说明叶片",
+        3,
+        "需要补充依据",
+        "source.name.match",
+        "source-checked",
+        "blade manufacturing",
+        "措辞不完全一致",
+        {"reviewer": "synthetic"},
+    )
+    assert legacy.evidence == "来源仅说明叶片"
+    assert legacy.page == 3
+    assert legacy.extra == {"reviewer": "synthetic"}
+    assert legacy.severity is None
+    assert legacy.platform is None
+
+    original = SourceCheck(
+        field=legacy.field,
+        dataset_value=legacy.dataset_value,
+        source_ref_id=legacy.source_ref_id,
+        status=legacy.status,
+        evidence=legacy.evidence,
+        page=legacy.page,
+        notes=legacy.notes,
+        rule_id=legacy.rule_id,
+        checked_source_id=legacy.checked_source_id,
+        matched_excerpt=legacy.matched_excerpt,
+        confidence_reason=legacy.confidence_reason,
+        extra=legacy.extra,
+        severity="advisory",
+        platform={
+            "disposition": "suggested",
+            "message": "建议补充来源中的完整名称。",
+        },
+    )
+    assert isinstance(original.platform, PlatformProjection)
+    assert SourceCheck.from_dict(original.to_dict()).to_dict() == original.to_dict()
+
+
+def test_source_check_direct_platform_construction_rejects_invalid_type():
+    try:
+        SourceCheck("field", "value", "source-1", "conflict", platform="required")
+    except ValueError as exc:
+        assert "platform projection must be an object" in str(exc)
+    else:
+        raise AssertionError("invalid direct platform construction must fail")
+
+
+def test_platform_projection_direct_construction_enforces_invariants():
+    invalid = [
+        {"disposition": 1, "message": "请修正。"},
+        {"disposition": "unknown", "message": "请修正。"},
+        {"disposition": "required", "message": 1},
+        {"disposition": "required", "message": "   "},
+        {"disposition": "internal_only", "message": "不应出现"},
+        {"disposition": "internal_only", "message": "   "},
+    ]
+    for kwargs in invalid:
+        try:
+            PlatformProjection(**kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"direct construction must reject {kwargs!r}")
+
+    projection = PlatformProjection(
+        disposition="clarification",
+        message="  请说明参考年的依据。  ",
+    )
+    assert projection.message == "请说明参考年的依据。"
+
+
+def test_validate_source_checks_rejects_invalid_status_severity():
+    valid_matrix = {
+        "matched": (None,),
+        "not_applicable": (None,),
+        "conflict": (None, "blocking", "advisory"),
+        "ambiguous": (None, "manual_review", "advisory"),
+        "not_found": (None, "manual_review", "advisory"),
+        "source_unavailable": (None, "input_gap", "manual_review", "advisory"),
+        "download_failed": (None, "input_gap", "manual_review", "advisory"),
+        "extraction_failed": (None, "input_gap", "manual_review", "advisory"),
+    }
+    all_severities = {"blocking", "advisory", "manual_review", "input_gap"}
+
+    for status, allowed in valid_matrix.items():
+        for severity in allowed:
+            payload = _source_check_payload(status)
+            if severity is not None:
+                payload["severity"] = severity
+            assert validate_source_checks([payload]) == []
+        for severity in all_severities - set(allowed):
+            errors = validate_source_checks(
+                [_source_check_payload(status, severity=severity)]
+            )
+            assert errors
+            assert f"source_checks[0]" in errors[0]
+            assert status in errors[0]
+
+    assert validate_source_checks([_source_check_payload("unknown")])
+    assert validate_source_checks([_source_check_payload("conflict", severity=" ")])
+    assert validate_source_checks([_source_check_payload("conflict", severity=1)])
+    assert validate_source_checks([_source_check_payload("conflict", page=True)])
+    assert validate_source_checks({"status": "conflict"})
+    assert validate_source_checks(["not an object"])
+
+
+def test_validate_source_checks_rejects_unknown_fields_and_aggregates_row_errors():
+    unknown = validate_source_checks(
+        [_source_check_payload("conflict", reviewer_note="must live in extra")]
+    )
+    assert unknown == [
+        "source_checks[0]: source check contains unknown properties: reviewer_note"
+    ]
+
+    errors = validate_source_checks(
+        [
+            {
+                "field": 7,
+                "dataset_value": "2021",
+                "source_ref_id": [],
+                "status": "conflict",
+                "severity": 1,
+                "page": True,
+                "extra": "not an object",
+                "platform": {
+                    "disposition": "clarification",
+                    "message": "请说明。",
+                },
+            }
+        ]
+    )
+    assert len(errors) >= 5
+    assert all(error.startswith("source_checks[0]:") for error in errors)
+    assert any("field must be a string" in error for error in errors)
+    assert any("source_ref_id must be a string" in error for error in errors)
+    assert any("severity must be a string" in error for error in errors)
+    assert any("page must be an integer or null" in error for error in errors)
+    assert any("extra must be an object" in error for error in errors)
+
+
+def test_validate_source_checks_rejects_invalid_disposition():
+    assert validate_source_checks(
+        [
+            _source_check_payload(
+                "conflict",
+                platform={
+                    "disposition": "required",
+                    "message": "请修正参考年。",
+                },
+            )
+        ]
+    ) == []
+    assert validate_source_checks(
+        [
+            _source_check_payload(
+                "ambiguous",
+                platform={
+                    "disposition": "clarification",
+                    "message": "请说明参考年的依据。",
+                },
+            )
+        ]
+    ) == []
+    assert validate_source_checks(
+        [
+            _source_check_payload(
+                "not_found",
+                severity="advisory",
+                platform={
+                    "disposition": "suggested",
+                    "message": "建议补充参考年依据。",
+                },
+            )
+        ]
+    ) == []
+
+    mismatched = validate_source_checks(
+        [
+            _source_check_payload(
+                "conflict",
+                platform={
+                    "disposition": "clarification",
+                    "message": "请说明。",
+                },
+            )
+        ]
+    )
+    assert mismatched and "does not permit" in mismatched[0]
+
+    for status in ("matched", "not_applicable"):
+        errors = validate_source_checks(
+            [
+                _source_check_payload(
+                    status,
+                    platform={
+                        "disposition": "suggested",
+                        "message": "建议补充。",
+                    },
+                )
+            ]
+        )
+        assert errors and "submitter-facing" in errors[0]
+
+    assert validate_source_checks(
+        [_source_check_payload("conflict", platform="required")]
+    )
+    assert validate_source_checks(
+        [
+            _source_check_payload(
+                "conflict",
+                platform={"disposition": "required", "message": "   "},
+            )
+        ]
+    )
 
 
 def test_resolve_source_refs_from_nested_dataset_and_text_url():

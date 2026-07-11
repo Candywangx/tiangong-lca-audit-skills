@@ -44,6 +44,27 @@ class PlatformProjection:
     disposition: str
     message: str = ""
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.disposition, str):
+            raise ValueError("platform disposition must be a string")
+        if self.disposition not in PLATFORM_DISPOSITIONS:
+            raise ValueError(
+                "platform disposition must be one of "
+                + ", ".join(sorted(PLATFORM_DISPOSITIONS))
+            )
+        if not isinstance(self.message, str):
+            raise ValueError("platform message must be a string")
+        if self.disposition == "internal_only":
+            if self.message:
+                raise ValueError("internal_only platform projection requires empty message")
+            return
+        message = self.message.strip()
+        if not message:
+            raise ValueError(
+                f"{self.disposition} platform projection requires a non-empty message"
+            )
+        object.__setattr__(self, "message", message)
+
     @classmethod
     def from_dict(cls, payload: Any) -> "PlatformProjection":
         if not isinstance(payload, dict):

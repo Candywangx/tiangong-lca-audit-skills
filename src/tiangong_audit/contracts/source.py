@@ -3,7 +3,38 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .platform import PlatformProjection, validate_platform_projection
+
 SOURCE_SCHEMA_VERSION = "tiangong-audit-source-v1"
+
+SOURCE_CHECK_STATUS_POLICY: dict[str, dict[str, Any]] = {
+    "matched": {"default_severity": None, "allowed_severities": frozenset()},
+    "not_applicable": {"default_severity": None, "allowed_severities": frozenset()},
+    "conflict": {
+        "default_severity": "blocking",
+        "allowed_severities": frozenset({"blocking", "advisory"}),
+    },
+    "ambiguous": {
+        "default_severity": "manual_review",
+        "allowed_severities": frozenset({"manual_review", "advisory"}),
+    },
+    "not_found": {
+        "default_severity": "manual_review",
+        "allowed_severities": frozenset({"manual_review", "advisory"}),
+    },
+    "source_unavailable": {
+        "default_severity": "input_gap",
+        "allowed_severities": frozenset({"input_gap", "manual_review", "advisory"}),
+    },
+    "download_failed": {
+        "default_severity": "input_gap",
+        "allowed_severities": frozenset({"input_gap", "manual_review", "advisory"}),
+    },
+    "extraction_failed": {
+        "default_severity": "input_gap",
+        "allowed_severities": frozenset({"input_gap", "manual_review", "advisory"}),
+    },
+}
 
 
 @dataclass(slots=True)
@@ -113,11 +144,29 @@ class SourceCheck:
     matched_excerpt: str = ""
     confidence_reason: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+    severity: str | None = None
+    platform: PlatformProjection | None = None
+
+    def __post_init__(self) -> None:
+        if self.platform is not None and not isinstance(
+            self.platform, PlatformProjection
+        ):
+            self.platform = PlatformProjection.from_dict(self.platform)
+
+    def resolved_severity(self) -> str | None:
+        """Return the explicit impact, or the deterministic default for its status."""
+
+        if self.severity is not None:
+            return self.severity
+        policy = SOURCE_CHECK_STATUS_POLICY.get(self.status)
+        if policy is None:
+            return None
+        return policy["default_severity"]
 
     def to_dict(self) -> dict[str, Any]:
         checked_source_id = self.checked_source_id or self.source_ref_id
         matched_excerpt = self.matched_excerpt or self.evidence
-        return {
+        payload = {
             "schema_version": SOURCE_SCHEMA_VERSION,
             "field": self.field,
             "dataset_value": self.dataset_value,
@@ -132,3 +181,184 @@ class SourceCheck:
             "confidence_reason": self.confidence_reason,
             "extra": dict(self.extra),
         }
+        if self.severity is not None:
+            payload["severity"] = self.severity
+        if self.platform is not None:
+            payload["platform"] = self.platform.to_dict()
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "SourceCheck":
+        check, errors = _parse_source_check(payload)
+        if errors:
+            raise ValueError("; ".join(errors))
+        assert check is not None
+        return check
+
+
+_SOURCE_CHECK_FIELDS = {
+    "schema_version",
+    "field",
+    "dataset_value",
+    "source_ref_id",
+    "checked_source_id",
+    "status",
+    "severity",
+    "platform",
+    "evidence",
+    "matched_excerpt",
+    "page",
+    "notes",
+    "rule_id",
+    "confidence_reason",
+    "extra",
+}
+
+_SOURCE_CHECK_REQUIRED_STRINGS = {"field", "dataset_value", "source_ref_id", "status"}
+_SOURCE_CHECK_OPTIONAL_STRINGS = {
+    "evidence",
+    "notes",
+    "rule_id",
+    "checked_source_id",
+    "matched_excerpt",
+    "confidence_reason",
+}
+
+
+def _parse_source_check(payload: Any) -> tuple[SourceCheck | None, list[str]]:
+    if not isinstance(payload, dict):
+        return None, ["source check must be an object"]
+
+    errors: list[str] = []
+    unknown = set(payload) - _SOURCE_CHECK_FIELDS
+    if unknown:
+        errors.append(
+            "source check contains unknown properties: " + ", ".join(sorted(unknown))
+        )
+
+    values: dict[str, Any] = {}
+    for name in sorted(_SOURCE_CHECK_REQUIRED_STRINGS):
+        if name not in payload:
+            errors.append(f"source check {name} is required")
+            continue
+        value = payload[name]
+        if not isinstance(value, str):
+            errors.append(f"source check {name} must be a string")
+        elif not value.strip():
+            errors.append(f"source check {name} must be non-empty")
+        else:
+            values[name] = value
+
+    for name in sorted(_SOURCE_CHECK_OPTIONAL_STRINGS):
+        value = payload.get(name, "")
+        if not isinstance(value, str):
+            errors.append(f"source check {name} must be a string")
+        else:
+            values[name] = value
+
+    if "schema_version" in payload:
+        version = payload["schema_version"]
+        if not isinstance(version, str):
+            errors.append("source check schema_version must be a string")
+        elif version != SOURCE_SCHEMA_VERSION:
+            errors.append(f"unsupported source check schema_version {version!r}")
+
+    severity: str | None = None
+    if "severity" in payload:
+        raw_severity = payload["severity"]
+        if not isinstance(raw_severity, str):
+            errors.append("source check severity must be a string")
+        elif not raw_severity.strip():
+            errors.append("source check severity must be non-empty")
+        elif raw_severity != raw_severity.strip():
+            errors.append("source check severity must not contain surrounding whitespace")
+        else:
+            severity = raw_severity
+
+    platform: PlatformProjection | None = None
+    if "platform" in payload:
+        try:
+            platform = PlatformProjection.from_dict(payload["platform"])
+        except ValueError as exc:
+            errors.append(f"source check platform: {exc}")
+
+    page = payload.get("page")
+    if page is not None and (not isinstance(page, int) or isinstance(page, bool)):
+        errors.append("source check page must be an integer or null")
+
+    extra = payload.get("extra", {})
+    if not isinstance(extra, dict):
+        errors.append("source check extra must be an object")
+
+    if errors:
+        return None, errors
+    return (
+        SourceCheck(
+            field=values["field"],
+            dataset_value=values["dataset_value"],
+            source_ref_id=values["source_ref_id"],
+            status=values["status"],
+            evidence=values["evidence"],
+            page=page,
+            notes=values["notes"],
+            rule_id=values["rule_id"],
+            checked_source_id=values["checked_source_id"],
+            matched_excerpt=values["matched_excerpt"],
+            confidence_reason=values["confidence_reason"],
+            extra=dict(extra),
+            severity=severity,
+            platform=platform,
+        ),
+        [],
+    )
+
+
+def validate_source_checks(payload: Any) -> list[str]:
+    """Return readable contract errors for a field-level source-check list."""
+
+    if not isinstance(payload, list):
+        return ["source_checks must be an array"]
+
+    errors: list[str] = []
+    for index, item in enumerate(payload):
+        prefix = f"source_checks[{index}]"
+        check, structural_errors = _parse_source_check(item)
+        if structural_errors:
+            errors.extend(f"{prefix}: {error}" for error in structural_errors)
+            continue
+        assert check is not None
+
+        policy = SOURCE_CHECK_STATUS_POLICY.get(check.status)
+        if policy is None:
+            errors.append(f"{prefix}: unknown source check status {check.status!r}")
+            continue
+        allowed = policy["allowed_severities"]
+
+        resolved = check.resolved_severity()
+        if resolved is None:
+            if check.severity is not None:
+                errors.append(
+                    f"{prefix}: status {check.status!r} does not permit severity "
+                    f"{check.severity!r}"
+                )
+        elif resolved not in allowed:
+            errors.append(
+                f"{prefix}: status {check.status!r} does not permit severity "
+                f"{resolved!r}; expected one of {sorted(allowed)}"
+            )
+
+        if check.platform is None:
+            continue
+        if resolved is None:
+            if check.platform.disposition != "internal_only":
+                errors.append(
+                    f"{prefix}: status {check.status!r} does not permit a "
+                    "submitter-facing platform projection"
+                )
+            continue
+        errors.extend(
+            f"{prefix}: {error}"
+            for error in validate_platform_projection(resolved, check.platform)
+        )
+
+    return errors
