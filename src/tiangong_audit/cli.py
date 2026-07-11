@@ -24,6 +24,14 @@ from tiangong_audit.process_pass_flow import (
     ProcessPassWorkflow,
 )
 from tiangong_audit.report.markdown import render_findings
+from tiangong_audit.report.platform import (
+    build_platform_comment,
+    normalize_platform_conclusion,
+)
+from tiangong_audit.contracts.platform import (
+    PlatformProjection,
+    validate_platform_projection,
+)
 from tiangong_audit.report.review_request import render_review_request
 from tiangong_audit.rule_engine import (
     GuardrailError,
@@ -806,37 +814,132 @@ def fetch_dataset(args: argparse.Namespace) -> int:
         return 1
 
 
-def _comment_payload_from_result_data(result_data: dict) -> dict:
-    findings = []
-    for index, finding in enumerate(result_data.get("findings", [])):
-        findings.append(
+def adapt_legacy_platform_result(result_data: dict) -> dict:
+    """Conservatively adapt a v1 platform result without reading internal prose."""
+
+    if not isinstance(result_data, dict):
+        raise ValueError("result must be an object")
+    conclusion = normalize_platform_conclusion(result_data.get("conclusion"))
+    raw_findings = result_data.get("findings", [])
+    if not isinstance(raw_findings, list):
+        raise ValueError("legacy findings must be a list")
+    safe_findings = []
+    for index, raw_finding in enumerate(raw_findings):
+        if not isinstance(raw_finding, dict):
+            raise ValueError(f"legacy findings[{index}] must be an object")
+        severity = raw_finding.get("severity")
+        if not isinstance(severity, str):
+            raise ValueError(f"legacy findings[{index}] severity must be a string")
+        safe_text: dict[str, str] = {}
+        for field in (
+            "id",
+            "rule_id",
+            "title",
+            "description",
+            "related_field",
+            "suggested_fix",
+        ):
+            value = raw_finding.get(field)
+            if value is None:
+                safe_text[field] = ""
+            elif isinstance(value, str):
+                safe_text[field] = value
+            else:
+                raise ValueError(
+                    f"legacy findings[{index}].{field} must be a string or null"
+                )
+        safe_findings.append(
             {
-                "id": finding.get("id") or finding.get("rule_id") or f"finding_{index}",
-                "severity": finding.get("severity", "manual_review"),
-                "title": finding.get("title") or finding.get("rule_id") or f"Finding {index + 1}",
-                "description": finding.get("description")
-                or finding.get("judgment")
-                or finding.get("evidence")
-                or "",
-                "evidence": finding.get("evidence", ""),
-                "suggested_fix": finding.get("suggested_fix") or finding.get("suggestion"),
-                "related_field": finding.get("related_field") or finding.get("location"),
-                "tags": finding.get("tags", []),
+                "id": safe_text["id"] or safe_text["rule_id"] or f"finding_{index}",
+                "severity": severity,
+                "title": safe_text["title"],
+                "description": safe_text["description"],
+                "related_field": safe_text["related_field"],
+                "suggested_fix": safe_text["suggested_fix"],
             }
         )
+    platform_comment = build_platform_comment(
+        {"conclusion": conclusion, "findings": safe_findings}
+    )
+    return {"conclusion": conclusion, "platform_comment": platform_comment}
+
+
+def _canonical_platform_input(raw_finding: object, index: int) -> dict:
+    if not isinstance(raw_finding, dict):
+        raise ValueError(f"platform_comment.findings[{index}] must be an object")
+    severity = raw_finding.get("severity")
+    disposition = raw_finding.get("disposition")
+    description = raw_finding.get("description")
+    if not isinstance(severity, str):
+        raise ValueError(f"platform_comment.findings[{index}].severity must be a string")
+    if not isinstance(disposition, str):
+        raise ValueError(f"platform_comment.findings[{index}].disposition must be a string")
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError(f"platform_comment.findings[{index}].description must be non-empty")
+    projection = PlatformProjection(disposition=disposition, message=description)
+    projection_errors = validate_platform_projection(severity, projection)
+    if projection_errors:
+        raise ValueError(
+            f"platform_comment.findings[{index}] " + "; ".join(projection_errors)
+        )
+    if not isinstance(raw_finding.get("id"), str):
+        raise ValueError(f"platform_comment.findings[{index}].id must be a string")
     return {
-        "conclusion": result_data["conclusion"],
-        "summary": result_data["summary"],
-        "findings": findings,
-        "auditor_notes": result_data.get("auditor_notes"),
+        "id": raw_finding["id"],
+        "severity": severity,
+        "platform": projection.to_dict(),
+    }
+
+
+def _comment_payload_from_result_data(result_data: dict) -> dict:
+    if not isinstance(result_data, dict):
+        raise ValueError("result must be an object")
+    if "platform_comment" not in result_data:
+        adapted = adapt_legacy_platform_result(result_data)
+        conclusion = adapted["conclusion"]
+        platform_comment = adapted["platform_comment"]
+    else:
+        conclusion = normalize_platform_conclusion(result_data.get("conclusion"))
+        platform_comment = result_data["platform_comment"]
+    if not isinstance(platform_comment, dict):
+        raise ValueError("platform_comment must be an object")
+    if platform_comment.get("valid") is not True:
+        errors = platform_comment.get("validation_errors")
+        detail = "; ".join(errors) if isinstance(errors, list) else "invalid platform comment"
+        raise ValueError(f"platform_comment is invalid: {detail}")
+    errors = platform_comment.get("validation_errors", [])
+    if errors not in (None, []):
+        raise ValueError("valid platform_comment cannot contain validation errors")
+    opinion = platform_comment.get("opinion")
+    if not isinstance(opinion, str) or not opinion:
+        raise ValueError("platform_comment.opinion must be a non-empty string")
+    raw_findings = platform_comment.get("findings")
+    if not isinstance(raw_findings, list):
+        raise ValueError("platform_comment.findings must be a list")
+    canonical_inputs = []
+    for index, raw_finding in enumerate(raw_findings):
+        canonical_inputs.append(_canonical_platform_input(raw_finding, index))
+    canonical = build_platform_comment(
+        {"conclusion": conclusion, "findings": canonical_inputs}
+    )
+    if canonical["valid"] is not True:
+        raise ValueError(
+            "canonical platform comment is invalid: "
+            + "; ".join(canonical["validation_errors"])
+        )
+    if canonical["opinion"] != opinion:
+        raise ValueError("platform_comment.opinion does not match canonical opinion")
+    return {
+        "conclusion": conclusion,
+        "summary": opinion,
+        "findings": canonical["findings"],
+        "auditor_notes": None,
     }
 
 
 def _draft_account_role_for_result(result_data: dict) -> str:
-    conclusion = str(result_data.get("conclusion") or "").strip().lower()
-    if conclusion in {"approved", "pass", "passed", "通过"}:
-        return "pass"
-    return "reject"
+    conclusion = normalize_platform_conclusion(result_data.get("conclusion"))
+    return "pass" if conclusion == "approved" else "reject"
 
 
 def save_result_draft(args: argparse.Namespace) -> int:
@@ -847,7 +950,7 @@ def save_result_draft(args: argparse.Namespace) -> int:
         if not review_id:
             raise KeyError("review_task_id")
         comment = _comment_payload_from_result_data(result_data)
-    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         print(f"ERROR: Invalid result format: {error}", file=sys.stderr)
         return 1
 

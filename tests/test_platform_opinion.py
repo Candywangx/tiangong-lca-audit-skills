@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from tiangong_audit.report.platform import build_platform_comment
+from tiangong_audit.report.platform import (
+    build_platform_comment,
+    normalize_platform_conclusion,
+)
 
 
 def _finding(
@@ -31,6 +34,37 @@ def _finding(
 
 def _result(conclusion: str, findings: list[dict[str, object]]) -> dict[str, object]:
     return {"conclusion": conclusion, "findings": findings}
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("approved", "approved"), ("pass", "approved"), ("passed", "approved"),
+        ("通过", "approved"), ("预检通过", "approved"),
+        ("rejected", "rejected"), ("reject", "rejected"), ("fail", "rejected"),
+        ("failed", "rejected"), ("不通过", "rejected"), ("预检不通过", "rejected"),
+        ("manual_review", "manual_review"), ("manual review", "manual_review"),
+        ("needs_manual_review", "manual_review"), ("需人工确认", "manual_review"),
+        ("需人工审核", "manual_review"), ("预检需人工确认", "manual_review"),
+        ("information_insufficient", "information_insufficient"),
+        ("information insufficient", "information_insufficient"),
+        ("insufficient_information", "information_insufficient"),
+        ("信息不足", "information_insufficient"),
+        ("预检信息不足", "information_insufficient"),
+    ],
+)
+def test_platform_conclusion_aliases_are_normalized_consistently(raw, expected):
+    assert normalize_platform_conclusion(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [None, 1, {}, []])
+def test_platform_conclusion_normalizer_requires_a_string(raw):
+    with pytest.raises(ValueError, match="must be a string"):
+        normalize_platform_conclusion(raw)
+
+    comment = build_platform_comment({"conclusion": raw, "findings": []})
+    assert comment["valid"] is False
+    assert any("must be a string" in error for error in comment["validation_errors"])
 
 
 def test_legacy_severity_defaults_are_conservative():

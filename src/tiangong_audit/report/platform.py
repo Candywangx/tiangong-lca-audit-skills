@@ -21,22 +21,38 @@ _CIRCLED_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳
 _TERMINAL_PUNCTUATION = "。！？!?；;."
 
 
-def _conclusion_kind(value: Any) -> str:
-    conclusion = value.strip().lower()
-    if conclusion in {"approved", "pass", "passed", "通过", "预检通过"}:
-        return "approved"
-    if conclusion in {"rejected", "fail", "failed", "不通过", "预检不通过"}:
-        return "rejected"
-    if conclusion in {"manual_review", "manual review", "需人工确认", "预检需人工确认"}:
-        return "manual_review"
-    if conclusion in {
-        "information_insufficient",
-        "information insufficient",
-        "信息不足",
-        "预检信息不足",
-    }:
-        return "information_insufficient"
-    return "unknown"
+def normalize_platform_conclusion(value: object) -> str:
+    """Normalize every supported audit/platform conclusion into one shared kind."""
+
+    if not isinstance(value, str):
+        raise ValueError("conclusion must be a string")
+    conclusion = value.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "approved": "approved",
+        "pass": "approved",
+        "passed": "approved",
+        "通过": "approved",
+        "预检通过": "approved",
+        "rejected": "rejected",
+        "reject": "rejected",
+        "fail": "rejected",
+        "failed": "rejected",
+        "不通过": "rejected",
+        "预检不通过": "rejected",
+        "manual_review": "manual_review",
+        "needs_manual_review": "manual_review",
+        "需人工确认": "manual_review",
+        "需人工审核": "manual_review",
+        "预检需人工确认": "manual_review",
+        "information_insufficient": "information_insufficient",
+        "insufficient_information": "information_insufficient",
+        "信息不足": "information_insufficient",
+        "预检信息不足": "information_insufficient",
+    }
+    try:
+        return aliases[conclusion]
+    except KeyError as exc:
+        raise ValueError(f"unknown platform conclusion {value!r}") from exc
 
 
 def _legacy_message(item: dict[str, Any]) -> str:
@@ -102,11 +118,11 @@ def build_platform_comment(result: dict[str, Any]) -> dict[str, Any]:
         errors.append("findings must be a list")
 
     raw_conclusion = result.get("conclusion")
-    if not isinstance(raw_conclusion, str):
-        errors.append("conclusion must be a string")
+    try:
+        conclusion = normalize_platform_conclusion(raw_conclusion)
+    except ValueError as exc:
+        errors.append(str(exc))
         conclusion = "invalid"
-    else:
-        conclusion = _conclusion_kind(raw_conclusion)
 
     for index, raw_item in enumerate(findings):
         if not isinstance(raw_item, dict):
@@ -183,8 +199,6 @@ def build_platform_comment(result: dict[str, Any]) -> dict[str, Any]:
             errors.append(
                 f"{conclusion} result requires at least one clarification platform item"
             )
-    elif conclusion != "invalid":
-        errors.append(f"unknown platform conclusion {result.get('conclusion')!r}")
 
     return {
         "valid": not errors,

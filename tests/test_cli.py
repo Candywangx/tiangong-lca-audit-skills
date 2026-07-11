@@ -3,7 +3,12 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 from tiangong_audit.cli import (
+    _comment_payload_from_result_data,
+    _draft_account_role_for_result,
+    adapt_legacy_platform_result,
     agent_findings_template,
     agent_findings_validate,
     audit_bundle,
@@ -28,8 +33,394 @@ from tiangong_audit.cli import (
     submit_result,
     validate_structure,
 )
+from tiangong_audit.workflows.semantic_review import _platform_result
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _routed_result(*, conclusion="rejected", valid=True):
+    finding = {
+        "id": "process.object.consistency",
+        "severity": "blocking",
+        "disposition": "required",
+        "title": "【需修改】统一过程对象描述。",
+        "description": "统一过程对象描述。",
+        "evidence": "",
+        "suggested_fix": "统一过程对象描述。",
+        "related_field": "",
+        "tags": ["required"],
+        "internal_state": "must never leave the audit workspace",
+    }
+    return {
+        "review_task_id": "review-1",
+        "dataset_id": "dataset-1",
+        "conclusion": conclusion,
+        "summary": {"internal": "do not leak"},
+        "auditor_notes": "source/tool limitation: extractor timed out; do not leak",
+        "findings": [
+            {
+                "severity": "manual_review",
+                "description": "Agent workflow state: cannot_judge; internal evidence",
+            }
+        ],
+        "platform_comment": {
+            "valid": valid,
+            "validation_errors": [] if valid else ["unsafe internal origin"],
+            "opinion": "①【需修改】统一过程对象描述。",
+            "findings": [finding],
+            "workflow_state": "do not leak",
+        },
+    }
+
+
+def test_comment_payload_uses_only_platform_comment():
+    result = _routed_result()
+
+    assert _comment_payload_from_result_data(result) == {
+        "conclusion": "rejected",
+        "summary": "①【需修改】统一过程对象描述。",
+        "findings": [
+            {
+                "id": "process.object.consistency",
+                "severity": "blocking",
+                "disposition": "required",
+                "title": "【需修改】统一过程对象描述。",
+                "description": "统一过程对象描述。",
+                "evidence": "",
+                "suggested_fix": "统一过程对象描述。",
+                "related_field": "",
+                "tags": ["required"],
+            }
+        ],
+        "auditor_notes": None,
+    }
+    serialized = json.dumps(_comment_payload_from_result_data(result), ensure_ascii=False)
+    for internal_text in (
+        "do not leak",
+        "internal evidence",
+        "must never leave",
+        "workflow_state",
+        "source/tool limitation",
+        "Agent workflow state",
+    ):
+        assert internal_text not in serialized
+
+
+def test_comment_payload_approved_draft_is_exactly_none():
+    result = _routed_result(conclusion="passed")
+    result["platform_comment"] = {
+        "valid": True,
+        "validation_errors": [],
+        "opinion": "无",
+        "findings": [],
+    }
+    assert _comment_payload_from_result_data(result) == {
+        "conclusion": "approved",
+        "summary": "无",
+        "findings": [],
+        "auditor_notes": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("conclusion", "expected_role"),
+    [
+        ("approved", "pass"), ("pass", "pass"), ("passed", "pass"),
+        ("通过", "pass"), ("预检通过", "pass"),
+        ("rejected", "reject"), ("reject", "reject"), ("fail", "reject"),
+        ("不通过", "reject"), ("manual review", "reject"),
+        ("needs_manual_review", "reject"), ("需人工审核", "reject"),
+        ("insufficient_information", "reject"), ("预检信息不足", "reject"),
+    ],
+)
+def test_draft_account_role_uses_shared_conclusion_aliases(conclusion, expected_role):
+    assert _draft_account_role_for_result({"conclusion": conclusion}) == expected_role
+
+
+def test_semantic_platform_result_flows_into_comment_payload_without_shape_drift():
+    platform_result = _platform_result(
+        {
+            "review_task_id": "review-1",
+            "dataset_id": "dataset-1",
+            "dataset_type": "process",
+            "version": "01.01.000",
+            "conclusion": "不通过",
+            "platform_conclusion": "rejected",
+            "summary": {"blocking": 1},
+            "source_consistency": {"conclusion": "一致"},
+            "rule_compliance": {"conclusion": "存在阻断问题"},
+            "agent_review": {"status": "completed"},
+            "audit_completeness": {"status": "complete"},
+            "source_summary": {"status": "complete"},
+            "report_note": "internal only",
+            "findings": [
+                {
+                    "rule_id": "process.dataset_type.consistency",
+                    "severity": "blocking",
+                    "origin": "agent",
+                    "location": "数据集类型",
+                    "evidence": "当前类型与内容不一致。",
+                    "judgment": "需要修改。",
+                    "suggestion": "改为过程数据集。",
+                    "platform": {
+                        "disposition": "required",
+                        "message": "当前类型与内容不一致，请改为过程数据集。",
+                    },
+                }
+            ],
+        }
+    )
+
+    payload = _comment_payload_from_result_data(platform_result)
+
+    assert payload["conclusion"] == "rejected"
+    assert payload["summary"] == platform_result["platform_comment"]["opinion"]
+    assert [item["id"] for item in payload["findings"]] == [
+        "process.dataset_type.consistency"
+    ]
+    assert payload["auditor_notes"] is None
+
+def test_comment_payload_rejects_noncanonical_opinion_bytes():
+    result = _routed_result()
+    result["platform_comment"]["opinion"] = "①【需修改】第一行。\n②【建议】第二行。  "
+
+    with pytest.raises(ValueError, match="does not match canonical"):
+        _comment_payload_from_result_data(result)
+
+
+def test_comment_payload_rebuilds_canonical_findings_and_drops_forged_fields():
+    result = _routed_result()
+    routed = result["platform_comment"]["findings"][0]
+    routed.update(
+        {
+            "title": "INTERNAL_SECRET title",
+            "evidence": "INTERNAL_SECRET source/tool limitation",
+            "suggested_fix": "INTERNAL_SECRET Agent workflow",
+            "related_field": "INTERNAL_SECRET path",
+            "tags": ["INTERNAL_SECRET"],
+        }
+    )
+
+    payload = _comment_payload_from_result_data(result)
+
+    assert "INTERNAL_SECRET" not in json.dumps(payload, ensure_ascii=False)
+    assert payload["findings"] == [
+        {
+            "id": "process.object.consistency",
+            "severity": "blocking",
+            "disposition": "required",
+            "title": "【需修改】统一过程对象描述。",
+            "description": "统一过程对象描述。",
+            "evidence": "",
+            "suggested_fix": "统一过程对象描述。",
+            "related_field": "",
+            "tags": ["required"],
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", 7),
+        ("rule_id", {"nested": "id"}),
+        ("title", ["nested"]),
+        ("description", 42),
+        ("related_field", {"nested": "path"}),
+        ("suggested_fix", ["nested"]),
+    ],
+)
+def test_legacy_adapter_rejects_non_string_safe_fields(field, value):
+    finding = {
+        "severity": "blocking",
+        "title": "对象冲突",
+        "description": "名称冲突",
+        "related_field": "过程对象",
+        "suggested_fix": "统一描述",
+    }
+    if field == "rule_id":
+        finding.pop("id", None)
+    finding[field] = value
+
+    with pytest.raises(ValueError, match=field):
+        adapt_legacy_platform_result({"conclusion": "rejected", "findings": [finding]})
+
+
+def test_legacy_adapter_treats_optional_none_as_missing():
+    adapted = adapt_legacy_platform_result(
+        {
+            "conclusion": "rejected",
+            "findings": [
+                {
+                    "id": None,
+                    "rule_id": None,
+                    "severity": "blocking",
+                    "title": None,
+                    "description": None,
+                    "related_field": None,
+                    "suggested_fix": None,
+                }
+            ],
+        }
+    )
+
+    assert adapted["platform_comment"]["findings"][0]["id"] == "finding_0"
+
+
+def test_legacy_platform_result_adapter_is_conservative():
+    legacy = {
+        "review_task_id": "review-1",
+        "conclusion": "不通过",
+        "summary": {"internal": "never map this"},
+        "auditor_notes": "never map this",
+        "findings": [
+            {
+                "id": "block",
+                "severity": "blocking",
+                "title": "对象冲突",
+                "description": "名称与技术描述冲突",
+                "related_field": "过程对象",
+                "suggested_fix": "统一描述",
+                "evidence": "internal raw evidence",
+                "tags": ["internal"],
+            },
+            {"id": "advise", "severity": "advisory", "title": "建议完善"},
+            {"id": "manual", "severity": "manual_review", "title": "人工判断"},
+            {"id": "gap", "severity": "input_gap", "title": "工具限制"},
+        ],
+    }
+
+    adapted = adapt_legacy_platform_result(legacy)
+
+    assert adapted["conclusion"] == "rejected"
+    assert [item["id"] for item in adapted["platform_comment"]["findings"]] == ["block"]
+    assert "internal raw evidence" not in json.dumps(adapted, ensure_ascii=False)
+    assert "never map this" not in json.dumps(adapted, ensure_ascii=False)
+    assert adapted["platform_comment"]["valid"] is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("approved", "approved"), ("pass", "approved"), ("passed", "approved"),
+        ("通过", "approved"), ("rejected", "rejected"), ("fail", "rejected"),
+        ("不通过", "rejected"), ("manual-review", "manual_review"),
+        ("manual review", "manual_review"), ("需人工确认", "manual_review"),
+        ("information-insufficient", "information_insufficient"),
+        ("insufficient information", "information_insufficient"),
+        ("信息不足", "information_insufficient"),
+    ],
+)
+def test_legacy_platform_result_adapter_normalizes_known_conclusions(raw, expected):
+    finding = {
+        "severity": "blocking" if expected == "rejected" else "manual_review",
+        "title": "待处理",
+        "description": "请补充",
+        "related_field": "字段",
+        "suggested_fix": "补充说明",
+    }
+    adapted = adapt_legacy_platform_result({"conclusion": raw, "findings": [finding]})
+
+    assert adapted["conclusion"] == expected
+
+
+def test_legacy_platform_result_adapter_rejects_unknown_conclusion():
+    with pytest.raises(ValueError, match="unknown platform conclusion"):
+        adapt_legacy_platform_result({"conclusion": "maybe", "findings": []})
+
+
+def test_invalid_dry_run_has_no_side_effects(tmp_path, monkeypatch, capsys):
+    result_path = tmp_path / "invalid.json"
+    result_path.write_text(json.dumps(_routed_result(valid=False), ensure_ascii=False), encoding="utf-8")
+    touched = []
+    monkeypatch.setattr("tiangong_audit.cli._append_operation_if_case", lambda *a, **k: touched.append("log"))
+    monkeypatch.setattr("tiangong_audit.cli._write_output", lambda *a, **k: touched.append("output"))
+    monkeypatch.setattr(
+        "tiangong_audit.cli.tiangong_api.TiangongAPIClient",
+        lambda **kwargs: touched.append("client"),
+    )
+
+    code = save_result_draft(
+        Namespace(
+            result=str(result_path), review_id=None, batch_id=None,
+            account_role="reject", execute=False, output=None,
+        )
+    )
+
+    assert code == 1
+    assert touched == []
+    assert "Invalid result format" in capsys.readouterr().err
+
+
+def test_invalid_execute_stops_before_client_factory(tmp_path, monkeypatch, capsys):
+    result_path = tmp_path / "invalid.json"
+    result_path.write_text(json.dumps(_routed_result(valid=False), ensure_ascii=False), encoding="utf-8")
+    touched = []
+    monkeypatch.setattr(
+        "tiangong_audit.cli.tiangong_api.TiangongAPIClient",
+        lambda **kwargs: touched.append("client"),
+    )
+
+    code = save_result_draft(
+        Namespace(
+            result=str(result_path), review_id=None, batch_id=None,
+            account_role="reject", execute=True, output=None,
+        )
+    )
+
+    assert code == 1
+    assert touched == []
+    assert "Invalid result format" in capsys.readouterr().err
+
+
+def test_save_result_draft_sends_exact_app_review_save_comment_draft_envelope(
+    tmp_path, monkeypatch, capsys
+):
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps(_routed_result(), ensure_ascii=False), encoding="utf-8")
+    calls = []
+
+    class FakeClient:
+        def invoke_function(self, name, payload):
+            calls.append((name, payload))
+            return {"ok": True}
+
+    monkeypatch.setattr(
+        "tiangong_audit.cli.tiangong_api.TiangongAPIClient",
+        lambda **kwargs: FakeClient(),
+    )
+
+    assert save_result_draft(
+        Namespace(
+            result=str(result_path), review_id=None, batch_id=None,
+            account_role="reject", execute=True, output=None,
+        )
+    ) == 0
+    expected_comment = {
+        "conclusion": "rejected",
+        "summary": "①【需修改】统一过程对象描述。",
+        "findings": [
+            {
+                "id": "process.object.consistency",
+                "severity": "blocking",
+                "disposition": "required",
+                "title": "【需修改】统一过程对象描述。",
+                "description": "统一过程对象描述。",
+                "evidence": "",
+                "suggested_fix": "统一过程对象描述。",
+                "related_field": "",
+                "tags": ["required"],
+            }
+        ],
+        "auditor_notes": None,
+    }
+    assert calls == [
+        (
+            "app_review_save_comment_draft",
+            {"reviewId": "review-1", "json": expected_comment},
+        )
+    ]
+    capsys.readouterr()
 
 
 def test_audit_command_creates_review_bundle():
@@ -278,11 +669,7 @@ def test_submit_result_force_requires_explicit_confirm_phrase(tmp_path, monkeypa
 
 def test_save_result_draft_dry_run_does_not_create_write_client(tmp_path, monkeypatch, capsys):
     result_path = tmp_path / "result.json"
-    result_path.write_text(
-        '{"review_task_id":"review-1","dataset_id":"dataset-1",'
-        '"conclusion":"rejected","summary":"Needs revision","findings":[]}',
-        encoding="utf-8",
-    )
+    result_path.write_text(json.dumps(_routed_result(), ensure_ascii=False), encoding="utf-8")
 
     def fail_client(**kwargs):
         raise AssertionError("dry-run must not create a platform client")
@@ -317,9 +704,10 @@ def test_save_result_draft_execute_uses_reject_account(monkeypatch, tmp_path, ca
                     {
                         "rule_id": "process.object.consistency",
                         "severity": "blocking",
-                        "judgment": "对象不一致",
-                        "evidence": "名称和技术描述冲突",
-                        "suggestion": "统一过程对象描述。",
+                        "title": "对象不一致",
+                        "description": "名称和技术描述冲突",
+                        "related_field": "过程对象",
+                        "suggested_fix": "统一过程对象描述。",
                     }
                 ],
             },
@@ -355,7 +743,7 @@ def test_save_result_draft_execute_uses_reject_account(monkeypatch, tmp_path, ca
     assert save_result_draft(args) == 0
     assert calls["client"] == {"account_role": "reject", "allow_writes": True}
     assert calls["draft"]["task_id"] == "review-1"
-    assert calls["draft"]["comment"]["findings"][0]["suggested_fix"] == "统一过程对象描述。"
+    assert "统一过程对象描述。" in calls["draft"]["comment"]["findings"][0]["suggested_fix"]
     assert '"submitted": false' in capsys.readouterr().out
 
 
@@ -428,19 +816,7 @@ def test_save_result_draft_execute_updates_case_and_operation_log(monkeypatch, t
         / "cases/active/review-1/reports/audit-result.platform.json"
     )
     result_path.parent.mkdir(parents=True, exist_ok=True)
-    result_path.write_text(
-        json.dumps(
-            {
-                "review_task_id": "review-1",
-                "dataset_id": "dataset-1",
-                "conclusion": "rejected",
-                "summary": "Needs revision",
-                "findings": [],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    result_path.write_text(json.dumps(_routed_result(), ensure_ascii=False), encoding="utf-8")
 
     def fake_client(**kwargs):
         return "reject-client"
