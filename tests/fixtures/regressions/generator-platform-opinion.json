@@ -1,0 +1,72 @@
+{
+  "precheck_finding": {
+    "rule_id": "process.dataset_type.consistency",
+    "severity": "blocking",
+    "location": "建模信息 / 数据集类型",
+    "evidence": "当前选择 Unit process, single operation，但清单边界包含多个连续制造环节。",
+    "judgment": "数据集类型与可见系统边界不一致。",
+    "suggestion": "改为与边界匹配的数据集类型，或拆分为单一操作过程。"
+  },
+  "additional_findings": [
+    {
+      "rule_id": "process.time.reference_year_basis",
+      "severity": "advisory",
+      "location": "时间代表性 / 参考年",
+      "evidence": "数据集参考年为 2014；可见论文于 2015 年发表，未直接说明现场调研年份。",
+      "judgment": "年份依据可进一步说明，但现有差异不足以单独阻断审核。",
+      "suggestion": "如有依据，请说明 2014 对应的数据采集或代表年份。",
+      "source": "agent-review",
+      "evidence_refs": ["sources/source-001/extracted.md:p1"],
+      "platform": {"disposition": "suggested", "message": "参考年填写为 2014，但现有 source 仅能确认论文收稿和发表时间，未直接说明现场调研年份。如有依据，请补充说明 2014 对应的数据采集或代表年份；该项不作为本轮通过的前置条件。"}
+    },
+    {
+      "rule_id": "process.source.indirect_2019",
+      "severity": "advisory",
+      "location": "数据来源 / 2019 年间接 source",
+      "evidence": "第二个 source 为 2019 年资料，当前说明未交代其具体作用。",
+      "judgment": "来源角色不清会降低可追溯性，但不证明清单本身错误。",
+      "suggestion": "说明该 source 支持的字段或背景数据；若未实际使用，请删除该引用。",
+      "source": "agent-review",
+      "evidence_refs": ["sources/source-002/extracted.md:p2"],
+      "platform": {"disposition": "suggested", "message": "当前引用了 2019 年的间接 source，但未说明它具体支持哪些字段或背景数据。建议补充其用途；如未实际使用，请删除该引用。"}
+    },
+    {
+      "rule_id": "process.flow.steel_shape",
+      "severity": "manual_review",
+      "location": "输入流 / 钢材分类",
+      "evidence": "source 只写明钢材，未给出更细形态。",
+      "judgment": "现有证据不足以判断更细分类，但没有直接错误证据。",
+      "suggestion": "审核员内部关注。",
+      "source": "agent-review",
+      "evidence_refs": ["sources/source-001/extracted.md:p3"],
+      "platform": {"disposition": "internal_only"}
+    },
+    {
+      "rule_id": "process.boundary.cutoff_coverage",
+      "severity": "advisory",
+      "location": "系统边界 / 截断覆盖率",
+      "evidence": "source 未给出定量覆盖率。",
+      "judgment": "不能要求提交者虚构来源中不存在的数据。",
+      "suggestion": "保留内部记录。",
+      "source": "agent-review",
+      "evidence_refs": ["sources/source-001/extracted.md:p4"],
+      "platform": {"disposition": "internal_only"}
+    },
+    {
+      "rule_id": "process.metadata.dqr_guidance",
+      "severity": "advisory",
+      "location": "数据质量 / DQR",
+      "evidence": "当前平台未要求填写相关字段。",
+      "judgment": "宽泛指导不适合作为本轮退回意见。",
+      "suggestion": "保留内部记录。",
+      "source": "agent-review",
+      "evidence_refs": ["snapshots/dataset.raw.json"],
+      "platform": {"disposition": "internal_only"}
+    }
+  ],
+  "source_checks": [
+    {"field": "process.name.zh", "dataset_value": "发电机制造", "source_ref_id": "source-1", "status": "matched", "evidence": "generator manufacturing"},
+    {"field": "process.exchange.input.steel", "dataset_value": "钢材", "source_ref_id": "source-1", "status": "ambiguous", "severity": "advisory", "evidence": "steel"}
+  ],
+  "expected_messages": ["【需修改】", "【建议】参考年填写为 2014", "【建议】当前引用了 2019 年的间接 source"]
+}

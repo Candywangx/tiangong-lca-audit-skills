@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -12,7 +13,13 @@ from tiangong_audit.contracts.agent_review import (
     uncovered_required_rule_ids,
     validate_agent_findings,
 )
+from tiangong_audit.contracts.platform import (
+    PlatformProjection,
+    validate_platform_projection,
+)
+from tiangong_audit.contracts.source import SourceCheck, SourceRef, validate_source_checks
 from tiangong_audit.report.markdown import render_platform_return_opinion
+from tiangong_audit.report.platform import build_platform_comment
 
 
 SEMANTIC_REVIEW_SCHEMA_VERSION = "tiangong-audit-semantic-review-v1"
@@ -40,6 +47,7 @@ _SOURCE_LAYER_FLOOR = {
     "需人工确认": "需人工确认",
     "未完全证实": "需人工确认",
     "未核验": "需人工确认",
+    "基本一致，有建议补充": "通过",
     "一致": "通过",
 }
 _RULE_LAYER_FLOOR = {
@@ -106,16 +114,18 @@ def semantic_review(
     agent_review = context["agent_review"]
     references_used = _reference_manifest_from_bundle(context["references"])
     rules_used = _rule_manifest_from_bundle(context["rules"])
-    agent_findings, agent_review_summary = _agent_review_findings(
-        agent_review,
-        agent_review_present=context["agent_review_present"],
-        dataset_type=dataset_type,
-    )
-    findings = [
+    deterministic_findings = [
         _normalize_precheck_finding(item)
         for item in precheck.get("findings", [])
         if isinstance(item, dict)
     ]
+    agent_findings, agent_review_summary, deterministic_findings = _agent_review_findings(
+        agent_review,
+        agent_review_present=context["agent_review_present"],
+        dataset_type=dataset_type,
+        deterministic_findings=deterministic_findings,
+    )
+    findings = deterministic_findings
     findings.extend(agent_findings)
     findings.extend(_source_findings(source_checks, source_artifacts, source_documents))
     findings.extend(
@@ -126,7 +136,15 @@ def semantic_review(
             agent_review=agent_review,
         )
     )
-    findings.extend(_input_gap_findings(case_root, precheck, source_checks, dataset_type))
+    findings.extend(
+        _input_gap_findings(
+            case_root,
+            precheck,
+            source_checks,
+            dataset_type,
+            source_check_validation_errors=context["source_check_validation_errors"],
+        )
+    )
     findings.extend(_semantic_context_findings(context))
 
     summary = _summary(findings)
@@ -140,6 +158,7 @@ def semantic_review(
     audit_completeness = _audit_completeness(
         agent_review_summary=agent_review_summary,
         source_checks=source_checks,
+        source_check_validation_errors=context["source_check_validation_errors"],
     )
     conclusion = _reconcile_conclusion(
         _conclusion(summary),
@@ -320,9 +339,23 @@ def build_semantic_context(
     """Materialize the evidence bundle that semantic-review actually uses."""
 
     precheck = _read_optional_json(case_root / "precheck" / "precheck.json", default={})
-    source_checks = _read_optional_json(case_root / "source-checks" / "checks.json", default=[])
-    if not isinstance(source_checks, list):
-        source_checks = []
+    raw_source_checks = _read_optional_json(
+        case_root / "source-checks" / "checks.json", default=[]
+    )
+    source_checks: list[dict[str, Any]] = []
+    source_check_validation_errors: list[str] = []
+    if isinstance(raw_source_checks, list):
+        for index, raw_check in enumerate(raw_source_checks):
+            row_errors = validate_source_checks([raw_check])
+            if row_errors:
+                source_check_validation_errors.extend(
+                    error.replace("source_checks[0]", f"source_checks[{index}]", 1)
+                    for error in row_errors
+                )
+            else:
+                source_checks.append(raw_check)
+    else:
+        source_check_validation_errors.extend(validate_source_checks(raw_source_checks))
     source_artifacts = _read_source_artifacts(case_root)
     source_documents = _read_source_documents(case_root, source_artifacts)
     agent_review_path = case_root / AGENT_FINDINGS_RELATIVE_PATH
@@ -342,6 +375,8 @@ def build_semantic_context(
         "precheck": precheck if isinstance(precheck, dict) else {},
         "claims": _read_optional_json(case_root / "source-checks" / "claims.json", default={}),
         "source_checks": source_checks,
+        "source_checks_raw": raw_source_checks,
+        "source_check_validation_errors": source_check_validation_errors,
         "source_artifacts": source_artifacts,
         "source_documents": source_documents,
         "agent_review": agent_review if isinstance(agent_review, dict) else {},
@@ -406,7 +441,7 @@ def _file_bundle(root: Path, relative_path: str, *, content_key: str) -> dict[st
 
 
 def _normalize_precheck_finding(item: dict[str, Any]) -> dict[str, Any]:
-    return {
+    finding = {
         "rule_id": str(item.get("rule_id") or ""),
         "severity": _severity(item.get("severity")),
         "location": str(item.get("location") or ""),
@@ -415,7 +450,11 @@ def _normalize_precheck_finding(item: dict[str, Any]) -> dict[str, Any]:
         "impact": _impact(_severity(item.get("severity"))),
         "suggestion": str(item.get("suggestion") or ""),
         "source": "precheck",
+        "origin": "deterministic",
     }
+    if isinstance(item.get("platform"), dict):
+        finding["platform"] = dict(item["platform"])
+    return finding
 
 
 def _agent_review_findings(
@@ -423,10 +462,12 @@ def _agent_review_findings(
     *,
     agent_review_present: bool,
     dataset_type: str,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    deterministic_findings: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     """Turn the Agent's rule reviews into first-class findings plus a summary."""
 
     required = list(required_rule_ids(dataset_type))
+    merged_deterministic_findings = deepcopy(deterministic_findings or [])
     if not agent_review_present:
         summary = {
             "present": False,
@@ -452,10 +493,44 @@ def _agent_review_findings(
                 "逐条复核并写入 agent-review/agent-findings.json。"
             ),
             "source": "semantic-review",
+            "origin": "workflow",
         }
-        return [finding], summary
+        return [finding], summary, merged_deterministic_findings
 
     errors = validate_agent_findings(agent_review, dataset_type=dataset_type)
+    if not errors:
+        for index, override in enumerate(agent_review.get("platform_overrides") or []):
+            rule_id = str(override.get("rule_id") or "")
+            location = str(override.get("location") or "")
+            matches = [
+                item
+                for item in merged_deterministic_findings
+                if item.get("rule_id") == rule_id and item.get("location") == location
+            ]
+            if len(matches) != 1:
+                errors.append(
+                    f"platform_overrides[{index}]: expected exactly one deterministic "
+                    f"finding for rule_id={rule_id!r}, location={location!r}; "
+                    f"found {len(matches)}"
+                )
+                continue
+            projection_errors = validate_platform_projection(
+                str(matches[0].get("severity") or ""), override.get("platform")
+            )
+            errors.extend(
+                f"platform_overrides[{index}]: {error}" for error in projection_errors
+            )
+        if not errors:
+            for override in agent_review.get("platform_overrides") or []:
+                target = next(
+                    item
+                    for item in merged_deterministic_findings
+                    if item.get("rule_id") == override.get("rule_id")
+                    and item.get("location") == override.get("location")
+                )
+                target["platform"] = PlatformProjection.from_dict(
+                    override["platform"]
+                ).to_dict()
     missing = uncovered_required_rule_ids(agent_review, dataset_type=dataset_type)
     rule_reviews = [
         item for item in agent_review.get("rule_reviews") or [] if isinstance(item, dict)
@@ -489,6 +564,7 @@ def _agent_review_findings(
                 "impact": _impact("input_gap"),
                 "suggestion": "运行 `agent-findings validate` 修复列出的契约错误后重新执行 semantic-review。",
                 "source": "semantic-review",
+                "origin": "validation",
             }
         )
     elif missing:
@@ -502,6 +578,7 @@ def _agent_review_findings(
                 "impact": _impact("manual_review"),
                 "suggestion": "补齐缺失规则的复核结论和证据引用。",
                 "source": "semantic-review",
+                "origin": "workflow",
             }
         )
 
@@ -511,8 +588,7 @@ def _agent_review_findings(
         refs = "; ".join(str(ref) for ref in item.get("evidence_refs") or [])
         source_label = "agent-review" + (f": {refs}" if refs else "")
         if verdict == "fail":
-            findings.append(
-                {
+            finding = {
                     "rule_id": rule_id,
                     "severity": _severity(item.get("severity")),
                     "location": str(item.get("location") or rule_id),
@@ -521,11 +597,13 @@ def _agent_review_findings(
                     "impact": _impact(_severity(item.get("severity"))),
                     "suggestion": str(item.get("suggestion") or ""),
                     "source": source_label,
+                    "origin": "agent",
                 }
-            )
+            if isinstance(item.get("platform"), dict):
+                finding["platform"] = dict(item["platform"])
+            findings.append(finding)
         elif verdict == "cannot_judge":
-            findings.append(
-                {
+            finding = {
                     "rule_id": rule_id,
                     "severity": "manual_review",
                     "location": str(item.get("location") or rule_id),
@@ -534,15 +612,17 @@ def _agent_review_findings(
                     "impact": _impact("manual_review"),
                     "suggestion": str(item.get("suggestion") or "由审核员补充证据后人工确认。"),
                     "source": source_label,
+                    "origin": "agent",
                 }
-            )
+            if isinstance(item.get("platform"), dict):
+                finding["platform"] = dict(item["platform"])
+            findings.append(finding)
 
     for item in agent_review.get("additional_findings") or []:
         if not isinstance(item, dict):
             continue
         severity = _severity(item.get("severity"))
-        findings.append(
-            {
+        finding = {
                 "rule_id": str(item.get("rule_id") or "agent.additional_finding"),
                 "severity": severity,
                 "location": str(item.get("location") or ""),
@@ -551,9 +631,12 @@ def _agent_review_findings(
                 "impact": _impact(severity),
                 "suggestion": str(item.get("suggestion") or ""),
                 "source": "agent-review",
+                "origin": "agent",
             }
-        )
-    return findings, summary
+        if isinstance(item.get("platform"), dict):
+            finding["platform"] = dict(item["platform"])
+        findings.append(finding)
+    return findings, summary, merged_deterministic_findings
 
 
 def _source_quality_findings(
@@ -566,28 +649,6 @@ def _source_quality_findings(
     """Findings that keep unresolved source verification out of a silent pass."""
 
     findings: list[dict[str, Any]] = []
-    ambiguous_fields = [
-        str(check.get("field") or "")
-        for check in source_checks
-        if str(check.get("status") or "") == "ambiguous"
-    ]
-    if ambiguous_fields:
-        shown = "、".join(ambiguous_fields[:8])
-        if len(ambiguous_fields) > 8:
-            shown += f" 等 {len(ambiguous_fields)} 项"
-        findings.append(
-            {
-                "rule_id": "source.check.ambiguous",
-                "severity": "manual_review",
-                "location": "Source 核验 / 存疑字段",
-                "evidence": f"以下字段存在相关 source 证据但不足以确认全部语义事实：{shown}。",
-                "judgment": "存疑字段未确认前，source 一致性不能视为已通过。",
-                "impact": _impact("manual_review"),
-                "suggestion": "补充页码级证据或数据处理说明后复核；无法确认时保留人工确认结论。",
-                "source": "source-checks/checks.json",
-            }
-        )
-
     if source_documents and claims:
         checked_status: dict[str, set[str]] = {}
         for check in source_checks:
@@ -618,6 +679,7 @@ def _source_quality_findings(
                     "impact": _impact("manual_review"),
                     "suggestion": "读取 source 原文核验这些字段并写入 checks.json；确无来源支持时按信息缺口处理。",
                     "source": "source-checks/claims.json",
+                    "origin": "semantic_context",
                 }
             )
 
@@ -649,6 +711,7 @@ def _source_quality_findings(
                     "source_documents_read 中记录该路径。"
                 ),
                 "source": "semantic-context",
+                "origin": "extraction",
             }
         )
     return findings
@@ -669,20 +732,25 @@ def _audit_completeness(
     *,
     agent_review_summary: dict[str, Any],
     source_checks: list[dict[str, Any]],
+    source_check_validation_errors: list[str] | None = None,
 ) -> dict[str, Any]:
     agent_ok = bool(agent_review_summary.get("valid"))
-    source_checks_present = bool(source_checks)
+    source_checks_valid = not source_check_validation_errors
+    source_checks_present = bool(source_checks) and source_checks_valid
     missing: list[str] = []
     if not agent_review_summary.get("present"):
         missing.append("agent_review_missing")
     elif not agent_ok:
         missing.append("agent_review_invalid_or_incomplete")
     if not source_checks_present:
-        missing.append("source_checks_missing")
+        missing.append(
+            "source_checks_invalid" if source_check_validation_errors else "source_checks_missing"
+        )
     return {
         "complete": agent_ok and source_checks_present,
         "agent_review_valid": agent_ok,
         "source_checks_present": source_checks_present,
+        "source_checks_valid": source_checks_valid,
         "missing": missing,
     }
 
@@ -708,50 +776,77 @@ def _reconcile_conclusion(
     return max(candidates, key=lambda item: _CONCLUSION_RANK.get(item, 1))
 
 
+def _artifact_source_id(artifact: dict[str, Any]) -> str:
+    """Resolve one artifact identity with the shared SourceRef precedence."""
+
+    return SourceRef.from_dict(dict(artifact.get("ref") or {})).stable_id()
+
+
 def _source_findings(
     source_checks: list[dict[str, Any]],
     source_artifacts: list[dict[str, Any]],
     source_documents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
+    field_gap_source_ids: set[str] = set()
     documents_by_source = {
         str(item.get("source_ref_id") or ""): item
         for item in source_documents
         if item.get("source_ref_id")
     }
     for check in source_checks:
-        status = str(check.get("status") or "")
-        if status == "conflict":
-            field = str(check.get("field") or "")
-            source_value = str(check.get("notes") or "").strip()
-            source_ref_id = str(check.get("checked_source_id") or check.get("source_ref_id") or "")
-            source_doc = documents_by_source.get(source_ref_id, {})
-            page_label = f"第 {check.get('page')} 页，" if check.get("page") else ""
-            excerpt = check.get("matched_excerpt") or check.get("evidence") or source_value
-            findings.append(
-                {
-                    "rule_id": "source.field.conflict",
-                    "severity": "blocking",
-                    "location": f"Source 核验 / {field}",
-                    "evidence": (
-                        f"数据集字段值为“{check.get('dataset_value') or ''}”；"
-                        f"source {source_ref_id or '-'} {page_label}证据为“{excerpt}”。"
-                    ),
-                    "judgment": "source 与数据集字段存在直接冲突，当前字段不能按原样通过。",
-                    "impact": _impact("blocking"),
-                    "suggestion": "核对 source 原文并修改数据集字段或补充数据处理说明。",
-                    "source": (
-                        f"source-checks/checks.json:{field}; "
-                        f"{source_doc.get('path') or 'sources/*/extracted.md'}"
-                    ),
-                }
-            )
+        parsed = SourceCheck.from_dict(check)
+        severity = parsed.resolved_severity()
+        if severity is None:
+            continue
+        field = parsed.field
+        source_ref_id = parsed.checked_source_id or parsed.source_ref_id
+        source_doc = documents_by_source.get(source_ref_id, {})
+        page_label = f"第 {parsed.page} 页，" if parsed.page else ""
+        excerpt = parsed.matched_excerpt or parsed.evidence or parsed.notes or "未记录摘录"
+        status_text = {
+            "conflict": "与数据集字段存在直接冲突",
+            "ambiguous": "存在相关证据，但不足以确认全部语义事实",
+            "not_found": "未找到支持当前字段值的直接证据",
+            "source_unavailable": "对应 source 当前不可用",
+            "download_failed": "对应 source 下载失败",
+            "extraction_failed": "对应 source 抽取失败",
+        }.get(parsed.status, parsed.status)
+        finding = {
+            "rule_id": f"source.field.{parsed.status}",
+            "severity": severity,
+            "location": f"Source 核验 / {field}",
+            "evidence": (
+                f"数据集字段值为“{parsed.dataset_value}”；source {source_ref_id or '-'} "
+                f"{page_label}核验结果为“{status_text}”，证据为“{excerpt}”。"
+            ),
+            "judgment": {
+                "blocking": "source 与数据集字段直接冲突，当前字段不能按原样通过。",
+                "advisory": "现有 source 不确定性不单独阻断审核，但值得补充说明。",
+                "manual_review": "现有 source 证据不足以确认该字段，需要补充事实或人工判断。",
+                "input_gap": "当前无法完成该字段的 source 核验，限制完整审核结论。",
+            }[severity],
+            "impact": _impact(severity),
+            "suggestion": parsed.notes or "核对 source 原文，并按核验结果修改字段或补充说明。",
+            "source": (
+                f"source-checks/checks.json:{field}; "
+                f"{source_doc.get('path') or 'sources/*/extracted.md'}"
+            ),
+            "origin": "source_check",
+        }
+        if parsed.platform is not None:
+            finding["platform"] = parsed.platform.to_dict()
+        findings.append(finding)
+        if severity == "input_gap" and source_ref_id:
+            field_gap_source_ids.add(source_ref_id)
     for artifact in source_artifacts:
         status = str(artifact.get("status") or "")
         if status not in {"source_unavailable", "download_failed", "extraction_failed"}:
             continue
-        ref = dict(artifact.get("ref") or {})
-        source_id = ref.get("source_id") or ref.get("label") or ref.get("uri") or "-"
+        artifact_source_id = _artifact_source_id(artifact)
+        if artifact_source_id and artifact_source_id in field_gap_source_ids:
+            continue
+        source_id = artifact_source_id or "-"
         findings.append(
             {
                 "rule_id": "source.artifact.unavailable",
@@ -762,11 +857,11 @@ def _source_findings(
                 "impact": _impact("input_gap"),
                 "suggestion": "补充可下载的 source 文件，或提供可复核的页码、表格和数据处理说明。",
                 "source": "sources/*/manifest.json",
+                "origin": "extraction",
             }
         )
     for artifact in source_artifacts:
-        ref = dict(artifact.get("ref") or {})
-        source_id = ref.get("source_id") or ref.get("label") or ref.get("uri") or "-"
+        source_id = _artifact_source_id(artifact) or "-"
         for requirement in artifact.get("related_artifact_requirements") or []:
             reference = str(requirement.get("reference") or "supplementary material")
             action = str(requirement.get("action") or "")
@@ -781,14 +876,14 @@ def _source_findings(
                     "suggestion": action
                     or "补充下载相关材料；无法取得时，将受影响字段标为 ambiguous 或 source_unavailable。",
                     "source": "sources/*/manifest.json",
+                    "origin": "semantic_context",
                 }
             )
     for artifact in source_artifacts:
         status = str(artifact.get("status") or "")
         if status != "extracted":
             continue
-        ref = dict(artifact.get("ref") or {})
-        source_id = str(ref.get("source_id") or ref.get("label") or ref.get("uri") or "")
+        source_id = _artifact_source_id(artifact)
         if source_id and source_id not in documents_by_source:
             findings.append(
                 {
@@ -800,6 +895,7 @@ def _source_findings(
                     "impact": _impact("input_gap"),
                     "suggestion": "重新抽取 source 文本，或补充可读取的 source 摘录和页码证据。",
                     "source": "sources/*/manifest.json",
+                    "origin": "extraction",
                 }
             )
     return findings
@@ -810,6 +906,7 @@ def _input_gap_findings(
     precheck: dict[str, Any],
     source_checks: list[dict[str, Any]],
     dataset_type: str,
+    source_check_validation_errors: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     findings = []
     if not (case_root / "precheck" / "precheck.json").exists() and dataset_type == "process":
@@ -823,9 +920,10 @@ def _input_gap_findings(
                 "impact": _impact("input_gap"),
                 "suggestion": "先运行 intake-review 或 check-rules 生成 precheck.json。",
                 "source": "semantic-review",
+                "origin": "workflow",
             }
         )
-    if not source_checks:
+    if not source_checks and not source_check_validation_errors:
         checks_path = case_root / "source-checks" / "checks.json"
         evidence = (
             "source-checks/checks.json 存在但没有任何字段核验结果。"
@@ -842,6 +940,7 @@ def _input_gap_findings(
                 "impact": _impact("manual_review"),
                 "suggestion": "先读取 source 原文和 claims，由 Agent 完成语义核验并写入 source-checks/checks.json。",
                 "source": "semantic-review",
+                "origin": "workflow",
             }
         )
     return findings
@@ -850,6 +949,24 @@ def _input_gap_findings(
 def _semantic_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     dataset_type = str(context.get("dataset_type") or "")
+    validation_errors = context.get("source_check_validation_errors") or []
+    if validation_errors:
+        shown = "；".join(str(error) for error in validation_errors[:5])
+        if len(validation_errors) > 5:
+            shown += f"；另有 {len(validation_errors) - 5} 条校验错误"
+        findings.append(
+            {
+                "rule_id": "source.checks.invalid",
+                "severity": "input_gap",
+                "location": "source-checks/checks.json",
+                "evidence": f"Source 核验文件未通过契约校验：{shown}",
+                "judgment": "无效的来源核验记录不能参与严重程度汇总或审核结论。",
+                "impact": _impact("input_gap"),
+                "suggestion": "修复列出的 source-check 契约错误后重新执行 semantic-review。",
+                "source": "semantic-context",
+                "origin": "validation",
+            }
+        )
     if not context.get("dataset_raw"):
         findings.append(
             {
@@ -861,6 +978,7 @@ def _semantic_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
                 "impact": _impact("input_gap"),
                 "suggestion": "先运行 intake-review 下载并保存 dataset.raw.json。",
                 "source": "semantic-context",
+                "origin": "semantic_context",
             }
         )
     if dataset_type == "process":
@@ -878,6 +996,7 @@ def _semantic_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
                 "impact": _impact("input_gap"),
                 "suggestion": "补充过程或模型数据集 JSON，或显式说明审核对象类型。",
                 "source": "semantic-context",
+                "origin": "semantic_context",
             }
         )
     return findings
@@ -898,6 +1017,7 @@ def _process_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
                 "impact": _impact("input_gap"),
                 "suggestion": "补充可下载和可抽取的 source 文档，或提供页码、表格和数据处理说明。",
                 "source": "semantic-context",
+                "origin": "extraction",
             }
         )
     return findings
@@ -920,6 +1040,7 @@ def _model_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
                 "impact": _impact("input_gap"),
                 "suggestion": "补充模型节点、连接关系和关联过程引用后重新运行 intake-review。",
                 "source": "semantic-context",
+                "origin": "semantic_context",
             }
         )
     elif not linked_processes:
@@ -933,6 +1054,7 @@ def _model_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
                 "impact": _impact("input_gap"),
                 "suggestion": "下载关键关联过程 JSON，并对其运行过程预检和 source 核验。",
                 "source": "semantic-context",
+                "origin": "semantic_context",
             }
         )
     for precheck in linked_prechecks:
@@ -948,6 +1070,7 @@ def _model_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
                     "impact": _impact("blocking"),
                     "suggestion": "先修正关联过程阻断问题，再复核模型目标量和连接关系。",
                     "source": str(precheck.get("path") or "precheck/linked-processes/*.json"),
+                    "origin": "semantic_context",
                 }
             )
     return findings
@@ -982,33 +1105,58 @@ def _source_consistency_review(
     source_documents: list[dict[str, Any]],
 ) -> dict[str, Any]:
     check_counts = Counter(str(item.get("status") or "") for item in source_checks)
+    parsed_checks = [SourceCheck.from_dict(item) for item in source_checks]
+    resolved_severities = [check.resolved_severity() for check in parsed_checks]
+    severity_counts = Counter(
+        severity for severity in resolved_severities if severity is not None
+    )
     artifact_counts = Counter(str(item.get("status") or "") for item in source_artifacts)
-    conflict_count = check_counts.get("conflict", 0)
-    ambiguous_count = check_counts.get("ambiguous", 0)
-    not_found_count = check_counts.get("not_found", 0)
     matched_count = check_counts.get("matched", 0)
     failed_artifact_count = sum(
         artifact_counts.get(status, 0)
         for status in ("source_unavailable", "download_failed", "extraction_failed")
     )
-    if not source_checks and not source_artifacts:
+    field_gap_source_ids = {
+        check.checked_source_id or check.source_ref_id
+        for check in parsed_checks
+        if check.resolved_severity() == "input_gap"
+    }
+    failed_artifact_ids: set[str] = set()
+    anonymous_failed_artifacts = 0
+    for artifact in source_artifacts:
+        if str(artifact.get("status") or "") not in {
+            "source_unavailable",
+            "download_failed",
+            "extraction_failed",
+        }:
+            continue
+        artifact_id = _artifact_source_id(artifact)
+        if artifact_id:
+            failed_artifact_ids.add(artifact_id)
+        else:
+            anonymous_failed_artifacts += 1
+    independent_failed_artifact_count = (
+        len(failed_artifact_ids - field_gap_source_ids) + anonymous_failed_artifacts
+    )
+    if severity_counts.get("blocking"):
+        conclusion = "不一致"
+        reason = f"发现 {severity_counts['blocking']} 个会阻断审核的 source 字段冲突。"
+    elif severity_counts.get("input_gap") or failed_artifact_count:
+        field_count = severity_counts.get("input_gap", 0)
+        conclusion = "证据不足"
+        reason = (
+            f"{field_count} 个字段、{independent_failed_artifact_count} 个文档"
+            "存在 source 核验信息缺口。"
+        )
+    elif severity_counts.get("manual_review"):
+        conclusion = "需人工确认"
+        reason = f"{severity_counts['manual_review']} 个字段需要补充事实或人工确认。"
+    elif severity_counts.get("advisory"):
+        conclusion = "基本一致，有建议补充"
+        reason = f"未发现阻断冲突，但有 {severity_counts['advisory']} 个非阻断 source 建议。"
+    elif not source_checks and not source_artifacts:
         conclusion = "未核验"
         reason = "没有可用的 source 文档或字段核验结果。"
-    elif failed_artifact_count:
-        conclusion = "证据不足"
-        reason = f"{failed_artifact_count} 个 source 文档不可用、下载失败或抽取失败。"
-    elif conflict_count:
-        conclusion = "不一致"
-        reason = f"发现 {conflict_count} 个字段与 PDF/source 文本直接冲突。"
-    elif ambiguous_count:
-        conclusion = "需人工确认"
-        reason = f"{ambiguous_count} 个字段存在相关 source 证据，但不足以确认全部语义事实。"
-    elif not_found_count:
-        conclusion = "未完全证实"
-        reason = (
-            f"{matched_count} 个字段的语义事实得到 source 支持，"
-            f"{not_found_count} 个字段未找到可支持的 source 证据。"
-        )
     elif source_checks:
         conclusion = "一致"
         reason = f"{matched_count} 个字段的语义事实得到 source 支持，未发现直接冲突。"
@@ -1020,6 +1168,7 @@ def _source_consistency_review(
         "conclusion": conclusion,
         "reason": reason,
         "check_status_counts": dict(check_counts),
+        "check_severity_counts": dict(severity_counts),
         "artifact_status_counts": dict(artifact_counts),
         "source_document_count": len(source_documents),
     }
@@ -1137,13 +1286,24 @@ def _dataset_identity(manifest: Any, precheck: dict[str, Any]) -> dict[str, Any]
 
 
 def _platform_result(result: dict[str, Any]) -> dict[str, Any]:
+    expected_platform_conclusion = _platform_conclusion(str(result["conclusion"]))
+    supplied_platform_conclusion = str(result.get("platform_conclusion") or "")
+    if supplied_platform_conclusion != expected_platform_conclusion:
+        raise ValueError(
+            "platform_conclusion does not match conclusion: "
+            f"expected {expected_platform_conclusion!r}, got {supplied_platform_conclusion!r}"
+        )
+    platform_comment = build_platform_comment(
+        {"conclusion": result["conclusion"], "findings": result["findings"]}
+    )
     return {
         "schema_version": PLATFORM_RESULT_SCHEMA_VERSION,
         "review_task_id": result["review_task_id"],
         "dataset_id": result["dataset_id"],
         "dataset_type": result["dataset_type"],
         "version": result["version"],
-        "conclusion": result["platform_conclusion"],
+        "conclusion": expected_platform_conclusion,
+        "platform_comment": platform_comment,
         "summary": {
             "conclusion_zh": result["conclusion"],
             **result["summary"],
@@ -1165,6 +1325,12 @@ def _platform_result(result: dict[str, Any]) -> dict[str, Any]:
                 "suggested_fix": item["suggestion"],
                 "related_field": item["location"],
                 "tags": [str(item.get("source") or "")] if item.get("source") else [],
+                "origin": item.get("origin") or "",
+                **(
+                    {"platform": dict(item["platform"])}
+                    if isinstance(item.get("platform"), dict)
+                    else {}
+                ),
             }
             for index, item in enumerate(result["findings"], 1)
         ],

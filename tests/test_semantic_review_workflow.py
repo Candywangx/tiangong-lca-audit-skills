@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import json
 import importlib
+from copy import deepcopy
 from pathlib import Path
+
+import pytest
 
 from tiangong_audit.case_store import CaseStore
 from tiangong_audit.contracts.agent_review import required_rule_ids
+from tiangong_audit.report.platform import build_platform_comment
 from tiangong_audit.workflows import semantic_review
-from tiangong_audit.workflows.semantic_review import MAX_CONTEXT_TEXT_CHARS
+from tiangong_audit.workflows.semantic_review import (
+    MAX_CONTEXT_TEXT_CHARS,
+    _agent_review_findings,
+    _normalize_precheck_finding,
+    _platform_result,
+    _reconcile_conclusion,
+    _source_consistency_review,
+    _source_findings,
+    _source_quality_findings,
+)
 
 
 def test_semantic_markdown_passes_conclusion_to_platform_renderer(monkeypatch):
@@ -157,7 +170,7 @@ def test_semantic_review_merges_precheck_source_checks_and_agent_gaps(tmp_path):
     assert semantic["semantic_context_summary"]["source_document_count"] == 1
     finding_rule_ids = {item["rule_id"] for item in semantic["findings"]}
     assert "semantic.agent_review.missing" in finding_rule_ids
-    assert "source.check.ambiguous" in finding_rule_ids
+    assert "source.field.ambiguous" in finding_rule_ids
     context = json.loads((case_root / "reports/semantic-context.json").read_text(encoding="utf-8"))
     assert context["references"][0]["content"]
     assert context["rules"][0]["rule_ids"]
@@ -402,7 +415,7 @@ def test_ambiguous_and_unverified_core_claims_cap_conclusion(tmp_path):
     assert summary["conclusion"] == "需人工确认"
     semantic = json.loads((case_root / "reports/semantic-review.json").read_text(encoding="utf-8"))
     rule_ids = {item["rule_id"] for item in semantic["findings"]}
-    assert "source.check.ambiguous" in rule_ids
+    assert "source.field.ambiguous" in rule_ids
     assert "source.core_claim.unverified" in rule_ids
     core_finding = next(
         item for item in semantic["findings"] if item["rule_id"] == "source.core_claim.unverified"
@@ -604,3 +617,328 @@ def _write_skill_contract_files(root: Path) -> None:
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _valid_v2_agent_payload(*, additional_findings=None, platform_overrides=None):
+    return {
+        "schema_version": "tiangong-audit-agent-findings-v2",
+        "review_id": "review-1",
+        "dataset_id": "dataset-1",
+        "dataset_type": "process",
+        "reviewed_by": "agent",
+        "source_documents_read": [],
+        "rule_reviews": [
+            {
+                "rule_id": rule_id,
+                "verdict": "pass",
+                "location": "过程信息",
+                "evidence": "字段与 source 摘录一致。",
+                "judgment": "该规则满足。",
+                "suggestion": "",
+                "severity": "",
+                "evidence_refs": ["sources/source-001/extracted.md:p3"],
+                "platform": {"disposition": "internal_only"},
+            }
+            for rule_id in required_rule_ids("process")
+        ],
+        "additional_findings": additional_findings or [],
+        "platform_overrides": platform_overrides or [],
+    }
+
+
+def _minimal_semantic_result(findings, *, conclusion="不通过"):
+    return {
+        "review_task_id": "review-1",
+        "dataset_id": "dataset-1",
+        "dataset_type": "process",
+        "version": "01.01.000",
+        "conclusion": conclusion,
+        "platform_conclusion": "rejected" if conclusion == "不通过" else "approved",
+        "summary": {"blocking": 1, "advisory": 0, "manual_review": 0, "input_gap": 0},
+        "source_consistency": {"conclusion": "一致"},
+        "rule_compliance": {"conclusion": "不符合规则"},
+        "agent_review": {"valid": True},
+        "audit_completeness": {"complete": True},
+        "source_summary": {},
+        "report_note": "内部说明",
+        "findings": findings,
+    }
+
+
+def test_generator_platform_opinion_has_one_required_and_two_suggestions(tmp_path):
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/regressions/generator-platform-opinion.json")
+        .read_text(encoding="utf-8")
+    )
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_json(case_root / "precheck/precheck.json", {
+        "dataset_type": "process",
+        "findings": [fixture["precheck_finding"]],
+        "summary": {"blocking": 1, "advisory": 0, "manual_review": 0, "input_gap": 0},
+    })
+    _write_json(case_root / "source-checks/checks.json", fixture["source_checks"])
+    payload = _valid_v2_agent_payload(additional_findings=fixture["additional_findings"])
+    _write_json(case_root / "agent-review/agent-findings.json", payload)
+
+    semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    semantic = json.loads(
+        (case_root / "reports/semantic-review.json").read_text(encoding="utf-8")
+    )
+    platform = json.loads(
+        (case_root / "reports/audit-result.platform.json").read_text(encoding="utf-8")
+    )
+    markdown = (case_root / "reports/semantic-review.md").read_text(encoding="utf-8")
+    comment = platform["platform_comment"]
+
+    assert semantic["agent_review"]["valid"] is True
+    assert comment["valid"] is True
+    assert [item["disposition"] for item in comment["findings"]] == [
+        "required",
+        "suggested",
+        "suggested",
+    ]
+    for expected in fixture["expected_messages"]:
+        assert expected in comment["opinion"]
+        assert expected in markdown
+    for excluded in ("钢材分类", "截断覆盖率", "DQR", "存疑字段"):
+        assert excluded not in comment["opinion"]
+        assert excluded not in markdown.split("## 平台退回意见", 1)[1]
+    assert {
+        "process.flow.steel_shape",
+        "process.boundary.cutoff_coverage",
+        "process.metadata.dqr_guidance",
+    } <= {item["rule_id"] for item in semantic["findings"]}
+
+
+def test_advisory_only_source_uncertainty_does_not_cap_result():
+    checks = [{
+        "field": "process.time.referenceYear", "dataset_value": "2014",
+        "source_ref_id": "source-1", "status": "ambiguous", "severity": "advisory",
+    }]
+    source_review = _source_consistency_review(checks, [], [])
+    assert source_review["conclusion"] == "基本一致，有建议补充"
+    assert _reconcile_conclusion(
+        "通过",
+        source_consistency=source_review,
+        rule_compliance={"conclusion": "符合规则"},
+        audit_completeness={"complete": True},
+    ) == "通过"
+
+
+def test_mixed_source_statuses_follow_impact_priority():
+    base = {"field": "a", "dataset_value": "v", "source_ref_id": "s"}
+    cases = [
+        ([{**base, "status": "matched"}], "一致"),
+        ([{**base, "status": "ambiguous", "severity": "advisory"}], "基本一致，有建议补充"),
+        ([{**base, "status": "ambiguous", "severity": "manual_review"}, {**base, "field": "b", "status": "ambiguous", "severity": "advisory"}], "需人工确认"),
+        ([{**base, "status": "source_unavailable", "severity": "input_gap"}, {**base, "field": "b", "status": "ambiguous", "severity": "manual_review"}], "证据不足"),
+        ([{**base, "status": "conflict", "severity": "blocking"}, {**base, "field": "b", "status": "source_unavailable", "severity": "input_gap"}], "不一致"),
+    ]
+    for checks, expected in cases:
+        assert _source_consistency_review(checks, [], [])["conclusion"] == expected
+
+
+def test_field_level_source_findings_are_not_duplicated_by_aggregate():
+    checks = [{
+        "field": "process.time.referenceYear", "dataset_value": "2014",
+        "source_ref_id": "source-1", "status": "ambiguous", "severity": "manual_review",
+    }]
+    findings = _source_findings(checks, [], []) + _source_quality_findings(
+        claims={}, source_checks=checks, source_documents=[], agent_review={}
+    )
+    assert len(findings) == 1
+    assert findings[0]["location"] == "Source 核验 / process.time.referenceYear"
+
+
+def test_same_source_field_gap_and_failed_artifact_are_counted_once():
+    checks = [{
+        "field": "process.time.referenceYear",
+        "dataset_value": "2014",
+        "source_ref_id": "source-1",
+        "status": "extraction_failed",
+        "severity": "input_gap",
+    }]
+    artifacts = [{
+        "status": "extraction_failed",
+        "ref": {"source_id": "source-1"},
+        "error": "PDF extraction failed",
+    }]
+    findings = _source_findings(checks, artifacts, [])
+    review = _source_consistency_review(checks, artifacts, [])
+
+    assert len(findings) == 1
+    assert findings[0]["origin"] == "source_check"
+    assert review["conclusion"] == "证据不足"
+    assert review["check_severity_counts"] == {"input_gap": 1}
+    assert "1 个字段" in review["reason"]
+    assert "0 个文档" in review["reason"]
+
+
+def test_same_uri_source_gap_and_artifact_without_source_id_are_counted_once():
+    uri = "https://example.invalid/source.pdf"
+    checks = [{
+        "field": "process.time.referenceYear",
+        "dataset_value": "2014",
+        "source_ref_id": uri,
+        "status": "source_unavailable",
+        "severity": "input_gap",
+    }]
+    artifacts = [{
+        "status": "source_unavailable",
+        "ref": {"uri": uri, "label": "论文附件"},
+        "error": "source unavailable",
+    }]
+
+    findings = _source_findings(checks, artifacts, [])
+    review = _source_consistency_review(checks, artifacts, [])
+
+    assert len(findings) == 1
+    assert review["conclusion"] == "证据不足"
+    assert "1 个字段" in review["reason"]
+    assert "0 个文档" in review["reason"]
+
+
+def test_deterministic_advisory_override_merges_once():
+    deterministic = _normalize_precheck_finding({
+        "rule_id": "process.description.detail", "severity": "advisory",
+        "location": "过程描述 / 技术说明", "evidence": "说明较短。",
+        "judgment": "可读性可改善。", "suggestion": "补充一句关键工艺。",
+    })
+    payload = _valid_v2_agent_payload(platform_overrides=[{
+        "rule_id": deterministic["rule_id"], "location": deterministic["location"],
+        "platform": {"disposition": "suggested", "message": "建议补充一句关键工艺说明。"},
+    }])
+    findings, summary, merged = _agent_review_findings(
+        payload, agent_review_present=True, dataset_type="process",
+        deterministic_findings=[deterministic],
+    )
+    assert summary["valid"] is True
+    assert findings == []
+    assert "platform" not in deterministic
+    assert merged[0]["platform"]["disposition"] == "suggested"
+    required = _normalize_precheck_finding({
+        "rule_id": "required", "severity": "blocking", "location": "类型",
+        "evidence": "类型错误", "judgment": "需修改", "suggestion": "修改类型",
+    })
+    comment = build_platform_comment({"conclusion": "不通过", "findings": [required, *merged]})
+    assert comment["opinion"].count("建议补充一句关键工艺说明") == 1
+
+
+def test_platform_overrides_require_one_exact_target():
+    finding = _normalize_precheck_finding({
+        "rule_id": "rule.a", "severity": "advisory", "location": "位置 A",
+        "evidence": "e", "judgment": "j", "suggestion": "s",
+    })
+    override = {
+        "rule_id": "rule.a", "location": "位置 A",
+        "platform": {"disposition": "suggested", "message": "建议处理。"},
+    }
+    scenarios = (
+        ([finding], [{**override, "location": "不存在"}]),
+        ([finding, deepcopy(finding)], [override]),
+        ([finding], [override, deepcopy(override)]),
+    )
+    for deterministic, overrides in scenarios:
+        _, summary, merged = _agent_review_findings(
+            _valid_v2_agent_payload(platform_overrides=overrides),
+            agent_review_present=True,
+            dataset_type="process",
+            deterministic_findings=deterministic,
+        )
+        assert summary["valid"] is False
+        assert all("platform" not in item for item in merged)
+
+
+def test_platform_result_keeps_evidence_and_adds_platform_comment():
+    finding = _normalize_precheck_finding({
+        "rule_id": "process.type", "severity": "blocking", "location": "数据集类型",
+        "evidence": "类型和边界不一致", "judgment": "必须修改", "suggestion": "修改类型",
+    })
+    platform = _platform_result(_minimal_semantic_result([finding]))
+    assert platform["platform_comment"]["valid"] is True
+    assert platform["platform_comment"]["findings"][0]["disposition"] == "required"
+    assert platform["findings"][0]["evidence"] == "类型和边界不一致"
+
+
+def test_platform_result_rejects_inconsistent_platform_conclusion():
+    finding = _normalize_precheck_finding({
+        "rule_id": "process.type", "severity": "blocking", "location": "数据集类型",
+        "evidence": "类型错误", "judgment": "必须修改", "suggestion": "修改类型",
+    })
+    result = _minimal_semantic_result([finding])
+    result["platform_conclusion"] = "approved"
+    with pytest.raises(ValueError, match="platform_conclusion"):
+        _platform_result(result)
+
+
+def test_invalid_source_checks_create_validation_origin_and_invalid_comment(tmp_path):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_json(case_root / "precheck/precheck.json", {
+        "dataset_type": "process",
+        "findings": [{"rule_id": "process.type", "severity": "blocking", "location": "类型", "evidence": "类型错误", "judgment": "必须修改", "suggestion": "修改类型"}],
+        "summary": {"blocking": 1, "advisory": 0, "manual_review": 0, "input_gap": 0},
+    })
+    _write_json(case_root / "source-checks/checks.json", [
+        {
+            "field": "process.name.zh", "dataset_value": "叶片制造", "source_ref_id": "source-1",
+            "status": "conflict", "evidence": "另一个过程名称",
+        },
+        {
+            "field": "process.time.referenceYear", "dataset_value": "2024", "source_ref_id": "source-1",
+            "status": "matched", "severity": "blocking",
+        },
+    ])
+    _write_agent_findings(case_root)
+    semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    semantic = json.loads((case_root / "reports/semantic-review.json").read_text(encoding="utf-8"))
+    invalid = next(item for item in semantic["findings"] if item["origin"] == "validation")
+    assert invalid["rule_id"] == "source.checks.invalid"
+    assert any(item["rule_id"] == "source.field.conflict" for item in semantic["findings"])
+    assert semantic["source_summary"]["check_count"] == 1
+    assert semantic["source_consistency"]["conclusion"] == "不一致"
+    platform = json.loads((case_root / "reports/audit-result.platform.json").read_text(encoding="utf-8"))
+    assert platform["platform_comment"]["valid"] is False
+
+
+def test_every_finding_construction_path_assigns_controlled_origin():
+    deterministic = _normalize_precheck_finding({"rule_id": "d", "severity": "advisory"})
+    agent, _, _ = _agent_review_findings(
+        _valid_v2_agent_payload(additional_findings=[{
+            "rule_id": "a", "severity": "advisory", "location": "a", "evidence": "e",
+            "judgment": "j", "suggestion": "s", "source": "agent-review",
+            "evidence_refs": ["x"], "platform": {"disposition": "internal_only"},
+        }]), agent_review_present=True, dataset_type="process",
+    )
+    source = _source_findings([
+        {"field": "x", "dataset_value": "x", "source_ref_id": "s", "status": "conflict"}
+    ], [], [])
+    context = _source_quality_findings(
+        claims={}, source_checks=[],
+        source_documents=[{"truncated": True, "path": "x", "source_ref_id": "s"}],
+        agent_review={},
+    )
+    semantic_context = _source_quality_findings(
+        claims={"process.geography.location.zh": "江苏"},
+        source_checks=[],
+        source_documents=[{"truncated": False, "path": "x", "source_ref_id": "s"}],
+        agent_review={},
+    )
+    extraction = _source_findings([], [{
+        "status": "extraction_failed", "ref": {"source_id": "s"}, "error": "bad pdf"
+    }], [])
+    workflow, _, _ = _agent_review_findings(
+        {}, agent_review_present=False, dataset_type="process"
+    )
+    validation, _, _ = _agent_review_findings(
+        {}, agent_review_present=True, dataset_type="process"
+    )
+    assert deterministic["origin"] == "deterministic"
+    assert agent[0]["origin"] == "agent"
+    assert source[0]["origin"] == "source_check"
+    assert context[0]["origin"] == "extraction"
+    assert semantic_context[0]["origin"] == "semantic_context"
+    assert extraction[0]["origin"] == "extraction"
+    assert workflow[0]["origin"] == "workflow"
+    assert validation[0]["origin"] == "validation"
