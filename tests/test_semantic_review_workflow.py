@@ -9,6 +9,7 @@ import pytest
 
 from tiangong_audit.case_store import CaseStore
 from tiangong_audit.contracts.agent_review import required_rule_ids
+from tiangong_audit.contracts.source import SOURCE_CHECK_STATUS_POLICY
 from tiangong_audit.report.platform import build_platform_comment
 from tiangong_audit.workflows import semantic_review
 from tiangong_audit.workflows.semantic_review import (
@@ -749,6 +750,52 @@ def test_field_level_source_findings_are_not_duplicated_by_aggregate():
     )
     assert len(findings) == 1
     assert findings[0]["location"] == "Source 核验 / process.time.referenceYear"
+
+
+@pytest.mark.parametrize(
+    ("severity", "platform"),
+    [
+        ("advisory", {"disposition": "suggested", "message": "建议补充年份依据。"}),
+        ("manual_review", {"disposition": "clarification", "message": "请补充年份依据。"}),
+    ],
+)
+def test_core_claim_not_found_uses_only_field_finding(severity, platform):
+    checks = [{
+        "field": "process.time.referenceYear",
+        "dataset_value": "2014",
+        "source_ref_id": "source-1",
+        "status": "not_found",
+        "severity": severity,
+        "platform": platform,
+    }]
+    findings = _source_findings(checks, [], []) + _source_quality_findings(
+        claims={"process.time.referenceYear": "2014"},
+        source_checks=checks,
+        source_documents=[{"source_ref_id": "source-1", "path": "source.md"}],
+        agent_review={},
+    )
+
+    assert len(findings) == 1
+    assert findings[0]["rule_id"] == "source.field.not_found"
+
+
+def test_every_legal_source_status_counts_as_checked_core_claim():
+    for status in SOURCE_CHECK_STATUS_POLICY:
+        checks = [{
+            "field": "process.time.referenceYear",
+            "dataset_value": "2014",
+            "source_ref_id": "source-1",
+            "status": status,
+        }]
+        findings = _source_quality_findings(
+            claims={"process.time.referenceYear": "2014"},
+            source_checks=checks,
+            source_documents=[{"source_ref_id": "source-1", "path": "source.md"}],
+            agent_review={},
+        )
+        assert not any(
+            item["rule_id"] == "source.core_claim.unverified" for item in findings
+        ), status
 
 
 def test_same_source_field_gap_and_failed_artifact_are_counted_once():

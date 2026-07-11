@@ -17,7 +17,12 @@ from tiangong_audit.contracts.platform import (
     PlatformProjection,
     validate_platform_projection,
 )
-from tiangong_audit.contracts.source import SourceCheck, SourceRef, validate_source_checks
+from tiangong_audit.contracts.source import (
+    SOURCE_CHECK_STATUS_POLICY,
+    SourceCheck,
+    SourceRef,
+    validate_source_checks,
+)
 from tiangong_audit.report.markdown import render_platform_return_opinion
 from tiangong_audit.report.platform import build_platform_comment
 
@@ -659,7 +664,7 @@ def _source_quality_findings(
             if not str(field).startswith(CORE_CLAIM_PREFIXES):
                 continue
             statuses = checked_status.get(str(field), set())
-            if statuses & {"matched", "conflict", "ambiguous", "not_applicable"}:
+            if statuses & SOURCE_CHECK_STATUS_POLICY.keys():
                 continue
             unverified.append(str(field))
         if unverified:
