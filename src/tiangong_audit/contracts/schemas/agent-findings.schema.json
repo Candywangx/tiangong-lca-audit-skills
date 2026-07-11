@@ -5,7 +5,7 @@
   "type": "object",
   "required": ["schema_version", "review_id", "reviewed_by", "rule_reviews"],
   "properties": {
-    "schema_version": {"const": "tiangong-audit-agent-findings-v1"},
+    "schema_version": {"const": "tiangong-audit-agent-findings-v2"},
     "review_id": {"type": "string"},
     "dataset_id": {"type": "string"},
     "dataset_type": {"enum": ["process", "model", ""]},
@@ -19,6 +19,10 @@
     "additional_findings": {
       "type": "array",
       "items": {"$ref": "#/$defs/additional_finding"}
+    },
+    "platform_overrides": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/platform_override"}
     }
   },
   "additionalProperties": false,
@@ -34,7 +38,8 @@
         "judgment": {"type": "string"},
         "suggestion": {"type": "string"},
         "severity": {"enum": ["blocking", "advisory", "manual_review", "input_gap", ""]},
-        "evidence_refs": {"type": "array", "items": {"type": "string"}}
+        "evidence_refs": {"type": "array", "items": {"type": "string"}},
+        "platform": {"$ref": "#/$defs/platform_projection"}
       },
       "additionalProperties": false,
       "allOf": [
@@ -58,6 +63,71 @@
         {
           "if": {"properties": {"verdict": {"enum": ["cannot_judge", "not_applicable"]}}},
           "then": {"required": ["judgment"]}
+        },
+        {
+          "if": {"properties": {"verdict": {"enum": ["pass", "not_applicable"]}}},
+          "then": {
+            "properties": {
+              "severity": {"const": ""},
+              "platform": {
+                "properties": {"disposition": {"const": "internal_only"}}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"verdict": {"const": "cannot_judge"}}},
+          "then": {
+            "properties": {
+              "severity": {"enum": ["manual_review", ""]},
+              "platform": {
+                "properties": {
+                  "disposition": {"enum": ["clarification", "internal_only"]}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["severity"],
+            "properties": {"severity": {"const": "blocking"}}
+          },
+          "then": {
+            "properties": {
+              "platform": {"properties": {"disposition": {"const": "required"}}}
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["severity"],
+            "properties": {"severity": {"const": "advisory"}}
+          },
+          "then": {
+            "properties": {
+              "platform": {
+                "properties": {
+                  "disposition": {"enum": ["suggested", "internal_only"]}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["severity"],
+            "properties": {"severity": {"enum": ["manual_review", "input_gap"]}}
+          },
+          "then": {
+            "properties": {
+              "platform": {
+                "properties": {
+                  "disposition": {"enum": ["clarification", "internal_only"]}
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -72,7 +142,70 @@
         "judgment": {"type": "string", "minLength": 1},
         "suggestion": {"type": "string", "minLength": 1},
         "source": {"type": "string"},
-        "evidence_refs": {"type": "array", "items": {"type": "string"}}
+        "evidence_refs": {"type": "array", "items": {"type": "string"}},
+        "platform": {"$ref": "#/$defs/platform_projection"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"severity": {"const": "blocking"}}},
+          "then": {
+            "properties": {
+              "platform": {"properties": {"disposition": {"const": "required"}}}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"severity": {"const": "advisory"}}},
+          "then": {
+            "properties": {
+              "platform": {
+                "properties": {
+                  "disposition": {"enum": ["suggested", "internal_only"]}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"severity": {"enum": ["manual_review", "input_gap"]}}},
+          "then": {
+            "properties": {
+              "platform": {
+                "properties": {
+                  "disposition": {"enum": ["clarification", "internal_only"]}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "platform_projection": {
+      "type": "object",
+      "required": ["disposition"],
+      "properties": {
+        "disposition": {
+          "enum": ["required", "clarification", "suggested", "internal_only"]
+        },
+        "message": {"type": "string", "minLength": 1, "pattern": "\\S"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"disposition": {"const": "internal_only"}}},
+          "then": {"not": {"required": ["message"]}},
+          "else": {"required": ["message"]}
+        }
+      ]
+    },
+    "platform_override": {
+      "type": "object",
+      "required": ["rule_id", "location", "platform"],
+      "properties": {
+        "rule_id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "location": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "platform": {"$ref": "#/$defs/platform_projection"}
       },
       "additionalProperties": false
     }

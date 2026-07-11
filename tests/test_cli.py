@@ -1105,3 +1105,11 @@ def test_new_subcommands_are_registered():
         ["eval", "score", "--case-id", "c1", "--result", "r.json"]
     )
     assert args.func is eval_score
+
+
+def test_required_paths_include_platform_modules_and_test():
+    from tiangong_audit.cli import REQUIRED_PATHS
+
+    assert "src/tiangong_audit/contracts/platform.py" in REQUIRED_PATHS
+    assert "src/tiangong_audit/report/platform.py" in REQUIRED_PATHS
+    assert "tests/test_platform_opinion.py" in REQUIRED_PATHS
