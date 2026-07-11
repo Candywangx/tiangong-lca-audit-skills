@@ -303,6 +303,7 @@ def render_semantic_review(result: dict[str, Any]) -> str:
         ]
     )
     platform_render_input = {
+        "conclusion": result["conclusion"],
         "findings": result["findings"],
     }
     lines.append(render_platform_return_opinion(platform_render_input).rstrip())

@@ -1,12 +1,49 @@
 from __future__ import annotations
 
 import json
+import importlib
 from pathlib import Path
 
 from tiangong_audit.case_store import CaseStore
 from tiangong_audit.contracts.agent_review import required_rule_ids
 from tiangong_audit.workflows import semantic_review
 from tiangong_audit.workflows.semantic_review import MAX_CONTEXT_TEXT_CHARS
+
+
+def test_semantic_markdown_passes_conclusion_to_platform_renderer(monkeypatch):
+    captured: dict[str, object] = {}
+    semantic_review_module = importlib.import_module(
+        "tiangong_audit.workflows.semantic_review"
+    )
+
+    def capture_platform_input(payload):
+        captured.update(payload)
+        return "## 平台退回意见\n\n无\n"
+
+    monkeypatch.setattr(
+        semantic_review_module, "render_platform_return_opinion", capture_platform_input
+    )
+    semantic_review_module.render_semantic_review(
+        {
+            "dataset": {"name_zh": "测试数据", "name_en": ""},
+            "audit_scope": "完整审核",
+            "dataset_type": "process",
+            "dataset_id": "dataset-1",
+            "version": "01.01.000",
+            "input_sufficiency": "充分",
+            "conclusion": "不通过",
+            "source_consistency": {"conclusion": "一致", "reason": "已核验"},
+            "rule_compliance": {"conclusion": "不符合规则", "reason": "存在阻断问题"},
+            "agent_review": {},
+            "audit_completeness": {"complete": True},
+            "source_summary": {},
+            "findings": [],
+            "source_limitations": [],
+            "report_note": "存在阻断问题。",
+        }
+    )
+
+    assert captured["conclusion"] == "不通过"
 
 
 def test_semantic_review_merges_precheck_source_checks_and_agent_gaps(tmp_path):

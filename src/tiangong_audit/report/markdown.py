@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .platform import build_platform_comment
+
 LABELS = {
     "blocking": "阻断问题",
     "advisory": "建议修改",
@@ -9,32 +11,10 @@ LABELS = {
     "input_gap": "信息缺口",
 }
 
-CIRCLED_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
-
-
-def _platform_number(index: int) -> str:
-    if 1 <= index <= len(CIRCLED_NUMBERS):
-        return CIRCLED_NUMBERS[index - 1]
-    return f"{index}."
-
-
 def render_platform_return_opinion(result: dict[str, Any]) -> str:
-    actionable = [
-        item
-        for item in result["findings"]
-        if item["severity"] in {"blocking", "advisory"}
-    ]
+    platform_comment = build_platform_comment(result)
     lines = ["## 平台退回意见", ""]
-    if not actionable:
-        lines.append("无")
-        return "\n".join(lines).rstrip() + "\n"
-
-    for index, item in enumerate(actionable, 1):
-        lines.append(
-            f"{_platform_number(index)}{item['location']} 中，{item['evidence']}"
-            f"{item['judgment']}建议：{item['suggestion']}"
-        )
-        lines.append("")
+    lines.extend(platform_comment["opinion"].splitlines())
     return "\n".join(lines).rstrip() + "\n"
 
 

@@ -392,21 +392,30 @@ def test_explicit_aquaculture_requirements_missing_from_inventory_create_finding
     assert "补充" in finding["suggestion"]
 
 
-def test_platform_return_opinion_uses_only_actionable_findings():
-    dataset = synthetic_process_dataset(
-        general_zh="本数据集使用外购氧气作为投入品。",
-        general_en="The dataset uses purchased oxygen as an input.",
-        cutoff_zh="-",
-        cutoff_en="-",
-    )
-    dataset["exchanges"]["inputs"][1]["flow_type"] = "Elementary flow"
-    dataset["exchanges"]["inputs"][1]["classification"] = [{"name": "Resources from air"}]
-    result = run_deterministic_checks(dataset, guardrails=GUARDRAILS)
+def test_platform_return_opinion_suppresses_suggestions_for_approved_precheck():
+    result = {
+        "conclusion": "预检通过",
+        "findings": [
+            {
+                "rule_id": "process.boundary.cutoff_detail",
+                "severity": "advisory",
+                "origin": "deterministic",
+                "location": "截断原则",
+                "evidence": "已说明截断原则，但未给出定量覆盖率。",
+                "judgment": "该建议不影响通过。",
+                "suggestion": "可补充定量覆盖率。",
+                "platform": {
+                    "disposition": "suggested",
+                    "message": "可补充定量覆盖率。",
+                },
+            }
+        ],
+    }
 
     opinion = report_markdown.render_platform_return_opinion(result)
 
     assert opinion.startswith("## 平台退回意见")
-    assert "①" in opinion
+    assert opinion == "## 平台退回意见\n\n无\n"
     assert "规则" not in opinion
     assert "process.boundary.cutoff_placeholder" not in opinion
 
