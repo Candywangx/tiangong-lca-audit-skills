@@ -205,6 +205,30 @@ def _check_exchange_metadata(dataset: dict[str, Any]) -> list[dict[str, str]]:
         if not exchange["classification"]:
             missing.append("流分类")
         if missing:
+            metadata_status = str(exchange.get("flow_metadata_status") or "resolved")
+            if metadata_status != "resolved":
+                status_labels = {
+                    "not_fetched": "尚未查询",
+                    "not_found": "未找到关联流",
+                    "fetch_failed": "关联流查询失败",
+                    "parse_failed": "关联流解析失败",
+                }
+                status_label = status_labels.get(metadata_status, metadata_status)
+                error = str(exchange.get("flow_metadata_error") or "").strip()
+                evidence = f"关联流元数据{status_label}，当前无法确认{'、'.join(missing)}。"
+                if error:
+                    evidence += f" 错误：{error}"
+                findings.append(
+                    _finding(
+                        "process.flow.semantic_match",
+                        "input_gap",
+                        f"输入/输出 / {_exchange_label(exchange)}",
+                        evidence,
+                        "这是审核证据采集缺口，不能据此认定提交者未填写流元数据。",
+                        "重新获取关联流数据并完成解析后，再判断流类型和流分类是否确实缺失。",
+                    )
+                )
+                continue
             findings.append(
                 _finding(
                     "process.flow.semantic_match",

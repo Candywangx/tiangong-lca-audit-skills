@@ -506,6 +506,32 @@ def test_dataset_api_reads_source_by_id_and_version():
     assert kwargs["params"]["version"] == "eq.01.00.000"
 
 
+def test_dataset_api_reads_flow_by_id_and_version():
+    session = FakeSession(
+        [{"id": "flow-1", "version": "01.00.000", "json": {"flowDataSet": {}}}]
+    )
+    api = DatasetAPI(make_client(session))
+
+    result = api.get_flow("flow-1", "01.00.000")
+
+    assert result["id"] == "flow-1"
+    method, url, kwargs = session.calls[0]
+    assert method == "GET"
+    assert url == "https://example.supabase.co/rest/v1/flows"
+    assert kwargs["params"]["id"] == "eq.flow-1"
+    assert kwargs["params"]["version"] == "eq.01.00.000"
+
+
+def test_dataset_api_rejects_versionless_flow_lookup():
+    session = FakeSession([])
+    api = DatasetAPI(make_client(session))
+
+    with pytest.raises(TiangongAPIError, match="requires an explicit version"):
+        api.get_flow("flow-1", "")
+
+    assert session.calls == []
+
+
 def test_write_operations_are_disabled_by_default():
     client = make_client(FakeSession({"ok": True}))
 

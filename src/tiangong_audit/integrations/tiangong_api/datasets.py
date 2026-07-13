@@ -16,6 +16,7 @@ MODEL_COLUMNS = (
 SOURCE_COLUMNS = (
     "id,version,json,json_ordered,modified_at,state_code,rule_verification,user_id"
 )
+FLOW_COLUMNS = "id,version,json"
 
 
 class DatasetAPI:
@@ -63,6 +64,24 @@ class DatasetAPI:
         if not rows:
             version_label = f" {version}" if version else ""
             raise TiangongAPIError(f"source dataset not found: {source_id}{version_label}")
+        return rows[0]
+
+    def get_flow(self, flow_id: str, version: str = "") -> dict[str, Any]:
+        if not version:
+            raise TiangongAPIError(
+                f"flow dataset lookup requires an explicit version: {flow_id}"
+            )
+        filters = {"id": f"eq.{flow_id}"}
+        filters["version"] = f"eq.{version}"
+        rows = self.client.select(
+            "flows",
+            columns=FLOW_COLUMNS,
+            filters=filters,
+            limit=1,
+        )
+        if not rows:
+            version_label = f" {version}" if version else ""
+            raise TiangongAPIError(f"flow dataset not found: {flow_id}{version_label}")
         return rows[0]
 
     def resolve_dataset(self, dataset_id: str, version: str) -> dict[str, Any]:

@@ -129,6 +129,7 @@ def semantic_review(
         agent_review_present=context["agent_review_present"],
         dataset_type=dataset_type,
         deterministic_findings=deterministic_findings,
+        case_root=case_root,
     )
     findings = deterministic_findings
     findings.extend(agent_findings)
@@ -468,11 +469,13 @@ def _agent_review_findings(
     agent_review_present: bool,
     dataset_type: str,
     deterministic_findings: list[dict[str, Any]] | None = None,
+    case_root: Path | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     """Turn the Agent's rule reviews into first-class findings plus a summary."""
 
     required = list(required_rule_ids(dataset_type))
     merged_deterministic_findings = deepcopy(deterministic_findings or [])
+    applied_precheck_resolutions: list[dict[str, Any]] = []
     if not agent_review_present:
         summary = {
             "present": False,
@@ -482,6 +485,8 @@ def _agent_review_findings(
             "required_total": len(required),
             "required_covered": 0,
             "validation_error_count": 0,
+            "precheck_resolution_count": 0,
+            "precheck_resolutions": [],
         }
         finding = {
             "rule_id": "semantic.agent_review.missing",
@@ -525,6 +530,31 @@ def _agent_review_findings(
             errors.extend(
                 f"platform_overrides[{index}]: {error}" for error in projection_errors
             )
+        for index, resolution in enumerate(agent_review.get("precheck_resolutions") or []):
+            rule_id = str(resolution.get("rule_id") or "")
+            location = str(resolution.get("location") or "")
+            for ref_index, evidence_ref in enumerate(
+                resolution.get("evidence_refs") or []
+            ):
+                evidence_error = _precheck_resolution_evidence_error(
+                    evidence_ref, case_root=case_root
+                )
+                if evidence_error:
+                    errors.append(
+                        f"precheck_resolutions[{index}].evidence_refs[{ref_index}]: "
+                        f"{evidence_error}"
+                    )
+            matches = [
+                item
+                for item in merged_deterministic_findings
+                if item.get("rule_id") == rule_id and item.get("location") == location
+            ]
+            if len(matches) != 1:
+                errors.append(
+                    f"precheck_resolutions[{index}]: expected exactly one deterministic "
+                    f"finding for rule_id={rule_id!r}, location={location!r}; "
+                    f"found {len(matches)}"
+                )
         if not errors:
             for override in agent_review.get("platform_overrides") or []:
                 target = next(
@@ -536,6 +566,20 @@ def _agent_review_findings(
                 target["platform"] = PlatformProjection.from_dict(
                     override["platform"]
                 ).to_dict()
+            resolved_targets = {
+                (str(item.get("rule_id") or ""), str(item.get("location") or ""))
+                for item in agent_review.get("precheck_resolutions") or []
+            }
+            if resolved_targets:
+                merged_deterministic_findings = [
+                    item
+                    for item in merged_deterministic_findings
+                    if (str(item.get("rule_id") or ""), str(item.get("location") or ""))
+                    not in resolved_targets
+                ]
+                applied_precheck_resolutions = deepcopy(
+                    agent_review.get("precheck_resolutions") or []
+                )
     missing = uncovered_required_rule_ids(agent_review, dataset_type=dataset_type)
     rule_reviews = [
         item for item in agent_review.get("rule_reviews") or [] if isinstance(item, dict)
@@ -552,6 +596,8 @@ def _agent_review_findings(
         "required_total": len(required),
         "required_covered": len(required) - len(missing),
         "validation_error_count": len(errors),
+        "precheck_resolution_count": len(applied_precheck_resolutions),
+        "precheck_resolutions": applied_precheck_resolutions,
     }
 
     findings: list[dict[str, Any]] = []
@@ -642,6 +688,27 @@ def _agent_review_findings(
             finding["platform"] = dict(item["platform"])
         findings.append(finding)
     return findings, summary, merged_deterministic_findings
+
+
+def _precheck_resolution_evidence_error(
+    evidence_ref: Any, *, case_root: Path | None
+) -> str:
+    if case_root is None:
+        return "cannot validate evidence without a case root"
+    if not isinstance(evidence_ref, str) or not evidence_ref.strip():
+        return "must be a non-empty case-relative path"
+    ref_path = Path(evidence_ref.strip())
+    if ref_path.is_absolute():
+        return "must be a case-relative path"
+    resolved_case_root = case_root.resolve()
+    resolved_evidence = (resolved_case_root / ref_path).resolve()
+    try:
+        resolved_evidence.relative_to(resolved_case_root)
+    except ValueError:
+        return "must stay inside the current case directory"
+    if not resolved_evidence.is_file():
+        return "does not point to an existing evidence file"
+    return ""
 
 
 def _source_quality_findings(

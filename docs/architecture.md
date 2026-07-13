@@ -72,14 +72,14 @@ Skill 不保存来源材料、开发文档、测试或占位代码。
 - `source resolve/fetch/claims`：解析来源引用，下载和抽取 source 文档，生成适合 source 语义核验的字段 claims；过程数据必须包含所有输入/输出交换，而不只包含参考流。程序不做字段级语义核验判断，`checks.json` 由 Agent 或人工写入。
 - `source attach-extraction`：把 Agent 用 `skill/document-granular-decompose` 生成的 image-aware 全文回填为当前 case 的正式抽取文本，保留旧文本、更新 manifest 并重扫补充材料引用。
 - `agent-findings template/validate`：为必审判断型规则生成待复核清单，并按证据契约校验 Agent 写入的复核结论。
-- `intake-review`：以平台 `review_id` 为入口，拉取任务、数据集、source 文档、claims、agent-findings 模板和初步 source-checks。
+- `intake-review`：以平台 `review_id` 为入口，拉取任务、数据集、过程交换引用的关联 flow、source 文档、claims、agent-findings 模板和初步 source-checks；原始、关联流证据、enriched 与标准化快照分开保存。
 - `semantic-review`：读取 Skill references、rules、程序预检、Agent 规则复核、source 核验、source 抽取文本和模型关联过程证据，物化 `semantic-context.json`，生成正式审核 findings 和平台草稿输入。
 - `eval list/score`：把 `tests/evals/` 中的历史审核意见作为回归基线，为任意审核结果计算结论一致性和意见点覆盖率。
 - `case init-batch/create/list/status`：创建统一案件结构并查询审核状态。
 
 预检只执行证据充分的保守规则。当前投影数据未稳定提供交换参考单位，因此 Runtime 不自动进行跨单位数量守恒判断。
 
-`semantic-review` 是写回平台草稿前的明确审核阶段；它形成本地结论和草稿输入，但不执行平台写操作。它对结论提供三条聚合保证：
+`semantic-review` 是写回平台草稿前的明确审核阶段；它形成本地结论和草稿输入，但不执行平台写操作。Agent 可通过带证据的 `precheck_resolutions` 精确反驳一条已被新证据推翻的确定性发现，反驳记录保留在复核摘要中。它对结论提供三条聚合保证：
 
 1. 综合结论不会好于 PDF/source 一致性层或规则符合性层的任一结论。
 2. 必审规则缺少 Agent 显式复核、复核不满足证据契约、source 核验缺失、存疑字段、

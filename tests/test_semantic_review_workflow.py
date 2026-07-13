@@ -620,7 +620,9 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _valid_v2_agent_payload(*, additional_findings=None, platform_overrides=None):
+def _valid_v2_agent_payload(
+    *, additional_findings=None, platform_overrides=None, precheck_resolutions=None
+):
     return {
         "schema_version": "tiangong-audit-agent-findings-v2",
         "review_id": "review-1",
@@ -644,6 +646,7 @@ def _valid_v2_agent_payload(*, additional_findings=None, platform_overrides=None
         ],
         "additional_findings": additional_findings or [],
         "platform_overrides": platform_overrides or [],
+        "precheck_resolutions": precheck_resolutions or [],
     }
 
 
@@ -895,6 +898,109 @@ def test_platform_overrides_require_one_exact_target():
         )
         assert summary["valid"] is False
         assert all("platform" not in item for item in merged)
+
+
+def test_evidence_backed_precheck_resolution_refutes_one_exact_finding(tmp_path):
+    deterministic = _normalize_precheck_finding(
+        {
+            "rule_id": "process.flow.semantic_match",
+            "severity": "blocking",
+            "location": "输入/输出 / 钢材",
+            "evidence": "缺少流类型、流分类。",
+            "judgment": "缺失元数据会影响连接。",
+            "suggestion": "补充流类型和流分类。",
+        }
+    )
+    resolution = {
+        "rule_id": deterministic["rule_id"],
+        "location": deterministic["location"],
+        "resolution": "refuted",
+        "reason": "关联流快照显示已有 Product flow 和五级分类。",
+        "evidence_refs": ["snapshots/related-flows/flow-steel_01.00.000.json"],
+    }
+    evidence_path = tmp_path / resolution["evidence_refs"][0]
+    evidence_path.parent.mkdir(parents=True)
+    evidence_path.write_text("{}", encoding="utf-8")
+
+    findings, summary, merged = _agent_review_findings(
+        _valid_v2_agent_payload(precheck_resolutions=[resolution]),
+        agent_review_present=True,
+        dataset_type="process",
+        deterministic_findings=[deterministic],
+        case_root=tmp_path,
+    )
+
+    assert findings == []
+    assert merged == []
+    assert summary["precheck_resolution_count"] == 1
+    assert summary["precheck_resolutions"] == [resolution]
+
+
+def test_precheck_resolution_requires_one_exact_deterministic_target():
+    deterministic = _normalize_precheck_finding(
+        {
+            "rule_id": "process.flow.semantic_match",
+            "severity": "blocking",
+            "location": "输入/输出 / 钢材",
+            "evidence": "缺少流分类。",
+            "judgment": "缺失元数据会影响连接。",
+            "suggestion": "补充流分类。",
+        }
+    )
+    resolution = {
+        "rule_id": deterministic["rule_id"],
+        "location": "输入/输出 / 不存在",
+        "resolution": "refuted",
+        "reason": "证据显示该发现不成立。",
+        "evidence_refs": ["snapshots/related-flows/flow-steel_01.00.000.json"],
+    }
+
+    _, summary, merged = _agent_review_findings(
+        _valid_v2_agent_payload(precheck_resolutions=[resolution]),
+        agent_review_present=True,
+        dataset_type="process",
+        deterministic_findings=[deterministic],
+    )
+
+    assert summary["valid"] is False
+    assert merged == [deterministic]
+
+
+@pytest.mark.parametrize(
+    "evidence_ref",
+    ["snapshots/does-not-exist.json", "../outside-case.json"],
+)
+def test_precheck_resolution_rejects_missing_or_outside_case_evidence(
+    tmp_path, evidence_ref
+):
+    deterministic = _normalize_precheck_finding(
+        {
+            "rule_id": "process.flow.semantic_match",
+            "severity": "blocking",
+            "location": "输入/输出 / 钢材",
+            "evidence": "缺少流分类。",
+            "judgment": "缺失元数据会影响连接。",
+            "suggestion": "补充流分类。",
+        }
+    )
+    resolution = {
+        "rule_id": deterministic["rule_id"],
+        "location": deterministic["location"],
+        "resolution": "refuted",
+        "reason": "关联流证据显示该发现不成立。",
+        "evidence_refs": [evidence_ref],
+    }
+
+    _, summary, merged = _agent_review_findings(
+        _valid_v2_agent_payload(precheck_resolutions=[resolution]),
+        agent_review_present=True,
+        dataset_type="process",
+        deterministic_findings=[deterministic],
+        case_root=tmp_path,
+    )
+
+    assert summary["valid"] is False
+    assert merged == [deterministic]
 
 
 def test_platform_result_keeps_evidence_and_adds_platform_comment():

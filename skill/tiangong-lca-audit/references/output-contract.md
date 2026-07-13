@@ -92,6 +92,8 @@ source 核验结果在证据型报告中应写明 source ID、文件、页码或
 
 每条发现都要解析为一个 disposition。未显式路由时，`blocking` 默认为 `required`，其他严重程度默认为 `internal_only`；`blocking` 不得隐藏为 `internal_only`。确定性规则产生的 `advisory` 只有通过精确匹配的 `platform_overrides` 明确提升后才能成为 `suggested`，未命中、重复命中或一条 override 命中多条发现均应报错。无论发现来自规则、Agent 语义判断还是 source 核验，都使用同一套路由约束。
 
+程序预检不是不可撤销的最终事实。若后续关联流、source 或平台快照直接证明某条确定性发现不成立，Agent 可以在 `precheck_resolutions` 中以 `rule_id + location` 精确指向该发现，使用唯一允许值 `resolution: refuted`，并填写非空 `reason` 和至少一条 `evidence_refs`。每条 evidence ref 必须是当前案件目录内真实存在、可读取的相对文件路径；绝对路径、目录穿越或不存在的文件不能作为撤销证据。只有恰好命中一条确定性发现且契约校验通过时，该发现才从当前结论中移除；未命中、重复命中或一条记录命中多条发现均为契约错误。反驳记录必须保留在 Agent 复核摘要中作为审计轨迹，不得无痕删除。
+
 非内部路由必须提供面向提交者的非空 `message`；`internal_only` 不写 message。Agent 规则复核只有在形成 `fail` 或 `cannot_judge` 发现时才能使用非内部路由，`pass` 和 `not_applicable` 不生成平台意见。
 
 路由结果必须满足：

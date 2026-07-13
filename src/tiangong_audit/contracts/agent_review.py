@@ -25,7 +25,10 @@ _TOP_LEVEL_FIELDS_V1 = {
     "rule_reviews",
     "additional_findings",
 }
-_TOP_LEVEL_FIELDS_V2 = _TOP_LEVEL_FIELDS_V1 | {"platform_overrides"}
+_TOP_LEVEL_FIELDS_V2 = _TOP_LEVEL_FIELDS_V1 | {
+    "platform_overrides",
+    "precheck_resolutions",
+}
 _RULE_REVIEW_FIELDS_V1 = {
     "rule_id",
     "verdict",
@@ -163,6 +166,7 @@ def new_agent_findings_template(
         ],
         "additional_findings": [],
         "platform_overrides": [],
+        "precheck_resolutions": [],
     }
 
 
@@ -389,6 +393,67 @@ def validate_agent_findings(
             PlatformProjection.from_dict(item.get("platform"))
         except ValueError as exc:
             errors.append(f"{label}: {exc}")
+
+    resolutions = payload.get("precheck_resolutions")
+    if resolutions is None:
+        resolutions = []
+    if not isinstance(resolutions, list):
+        errors.append("precheck_resolutions must be a list")
+        resolutions = []
+    seen_resolution_targets: set[tuple[str, str]] = set()
+    for index, item in enumerate(resolutions, 1):
+        label = f"precheck_resolutions[{index}]"
+        if not isinstance(item, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        unknown = set(item) - {
+            "rule_id",
+            "location",
+            "resolution",
+            "reason",
+            "evidence_refs",
+        }
+        if unknown:
+            errors.append(f"{label}: unknown properties: {', '.join(sorted(unknown))}")
+
+        values: dict[str, str] = {}
+        for field_name in ("rule_id", "location", "reason"):
+            raw_value = item.get(field_name)
+            if not isinstance(raw_value, str):
+                errors.append(f"{label}: {field_name} must be a string")
+                values[field_name] = ""
+            else:
+                values[field_name] = raw_value.strip()
+                if not values[field_name]:
+                    errors.append(f"{label}: {field_name} is required")
+                elif field_name in {"rule_id", "location"} and raw_value != values[field_name]:
+                    errors.append(
+                        f"{label}: {field_name} must not have surrounding whitespace"
+                    )
+
+        if item.get("resolution") != "refuted":
+            errors.append(f"{label}: resolution must be 'refuted'")
+
+        evidence_refs = item.get("evidence_refs")
+        if not isinstance(evidence_refs, list):
+            errors.append(f"{label}: evidence_refs must be a list")
+        elif not evidence_refs:
+            errors.append(f"{label}: evidence_refs requires at least one evidence path")
+        else:
+            for ref_index, ref in enumerate(evidence_refs, 1):
+                if not isinstance(ref, str) or not ref.strip():
+                    errors.append(
+                        f"{label}: evidence_refs[{ref_index}] must be a non-empty string"
+                    )
+
+        target = (values.get("rule_id", ""), values.get("location", ""))
+        if all(target):
+            if target in seen_resolution_targets:
+                errors.append(
+                    f"{label}: duplicate resolution target rule_id={target[0]!r}, "
+                    f"location={target[1]!r}"
+                )
+            seen_resolution_targets.add(target)
 
     effective_type = dataset_type or str(payload.get("dataset_type") or "")
     missing = uncovered_required_rule_ids(payload, dataset_type=effective_type)

@@ -100,6 +100,12 @@ def _normalize_exchange(row: dict[str, Any], fallback_direction: str) -> dict[st
         "is_reference": str(row.get("是否基准流", "") or "") in {"是", "yes", "true", "True"},
         "flow_type": str(row.get("流类型", "") or ""),
         "classification": deepcopy(row.get("流分类") or []),
+        "flow_metadata_status": str(
+            row.get("流元数据状态") or row.get("flow_metadata_status") or "resolved"
+        ),
+        "flow_metadata_error": str(
+            row.get("流元数据错误") or row.get("flow_metadata_error") or ""
+        ),
         "flow_uuid": str(row.get("流UUID") or row.get("flow_uuid") or ""),
         "flow_version": str(row.get("流版本") or row.get("flow_version") or ""),
         "exchange_description": _multilingual_name(row.get("交换短描述") or {}),
@@ -169,9 +175,18 @@ def _normalize_projected(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _classifications(value: Any) -> list[dict[str, str]]:
-    classes = _get_path(value, "classificationInformation", "classification", "class")
-    if classes is None:
-        classes = _get_path(value, "classificationInformation", "classification", "common:class")
+    classification_information = _first(
+        _get_path(value, "classificationInformation")
+    ) or {}
+    if not isinstance(classification_information, dict):
+        return []
+    classification = _first(
+        classification_information.get("classification")
+        or classification_information.get("common:classification")
+    ) or {}
+    if not isinstance(classification, dict):
+        return []
+    classes = classification.get("class") or classification.get("common:class")
     result: list[dict[str, str]] = []
     for item in _items(classes):
         if isinstance(item, dict):
@@ -224,7 +239,8 @@ def _flow_property(
 def _normalize_raw_exchange(row: dict[str, Any], reference_pointer: str) -> dict[str, Any]:
     direction = str(row.get("exchangeDirection") or row.get("direction") or "").lower()
     reference = row.get("referenceToFlowDataSet") or {}
-    flow_dataset = row.get("flowDataSet") or {}
+    raw_flow_dataset = row.get("flowDataSet")
+    flow_dataset = raw_flow_dataset if isinstance(raw_flow_dataset, dict) else {}
     flow_information = _get_path(flow_dataset, "flowInformation") or {}
     data_set_information = _get_path(flow_information, "dataSetInformation") or {}
     exchange_description = _localized_text(
@@ -255,6 +271,18 @@ def _normalize_raw_exchange(row: dict[str, Any], reference_pointer: str) -> dict
         or row.get("flowType")
         or ""
     )
+    flow_uuid = str(
+        reference.get("@refObjectId")
+        or reference.get("refObjectId")
+        or reference.get("uuid")
+        or reference.get("@uuid")
+        or ""
+    )
+    flow_metadata_status = str(
+        row.get("flowMetadataStatus")
+        or row.get("flow_metadata_status")
+        or ("resolved" if isinstance(raw_flow_dataset, dict) else "not_fetched")
+    )
     return {
         "index": row.get("exchangeNumber") or row.get("@index"),
         "internal_id": internal_id,
@@ -267,13 +295,11 @@ def _normalize_raw_exchange(row: dict[str, Any], reference_pointer: str) -> dict
         "is_reference": bool(row.get("referenceToReferenceFlow")) or internal_id == reference_pointer,
         "flow_type": flow_type,
         "classification": _classifications(data_set_information),
-        "flow_uuid": str(
-            reference.get("@refObjectId")
-            or reference.get("refObjectId")
-            or reference.get("uuid")
-            or reference.get("@uuid")
-            or ""
+        "flow_metadata_status": flow_metadata_status,
+        "flow_metadata_error": str(
+            row.get("flowMetadataError") or row.get("flow_metadata_error") or ""
         ),
+        "flow_uuid": flow_uuid,
         "flow_version": str(reference.get("@version") or reference.get("version") or ""),
         "exchange_description": exchange_description,
         "flow_dataset_name": flow_dataset_name,

@@ -179,6 +179,54 @@ def test_problem_fixture_detects_missing_flow_metadata_and_duplicate_text():
     assert result["conclusion"] == "预检不通过"
 
 
+def test_unresolved_flow_lookup_is_input_gap_not_submitter_blocking():
+    dataset = synthetic_process_dataset(
+        general_zh="本数据集描述再生铜杆制造。",
+        general_en="This dataset describes recycled copper rod production.",
+        cutoff_zh="采用 1% 单项、5% 累计截断原则。",
+        cutoff_en="The dataset applies 1% single-flow and 5% cumulative cut-off criteria.",
+    )
+    exchange = dataset["exchanges"]["inputs"][0]
+    exchange["flow_type"] = ""
+    exchange["classification"] = []
+    exchange["flow_metadata_status"] = "fetch_failed"
+
+    result = run_deterministic_checks(dataset)
+    finding = next(
+        item
+        for item in result["findings"]
+        if item["rule_id"] == "process.flow.semantic_match"
+        and exchange["name"]["zh"] in item["location"]
+    )
+
+    assert finding["severity"] == "input_gap"
+    assert "查询失败" in finding["evidence"]
+    assert "重新获取" in finding["suggestion"]
+
+
+def test_resolved_flow_genuinely_missing_metadata_remains_blocking():
+    dataset = synthetic_process_dataset(
+        general_zh="本数据集描述再生铜杆制造。",
+        general_en="This dataset describes recycled copper rod production.",
+        cutoff_zh="采用 1% 单项、5% 累计截断原则。",
+        cutoff_en="The dataset applies 1% single-flow and 5% cumulative cut-off criteria.",
+    )
+    exchange = dataset["exchanges"]["inputs"][0]
+    exchange["flow_type"] = ""
+    exchange["classification"] = []
+    exchange["flow_metadata_status"] = "resolved"
+
+    result = run_deterministic_checks(dataset)
+    finding = next(
+        item
+        for item in result["findings"]
+        if item["rule_id"] == "process.flow.semantic_match"
+        and exchange["name"]["zh"] in item["location"]
+    )
+
+    assert finding["severity"] == "blocking"
+
+
 def test_heavy_naphtha_fixture_is_left_for_semantic_audit():
     result = check("process-audit-input-projected.json")
     assert result["summary"]["blocking"] == 0

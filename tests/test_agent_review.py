@@ -150,6 +150,7 @@ def test_v2_template_contains_internal_platform_and_empty_overrides():
     )
     assert template["schema_version"] == "tiangong-audit-agent-findings-v2"
     assert template["platform_overrides"] == []
+    assert template["precheck_resolutions"] == []
     assert all(
         item["platform"] == {"disposition": "internal_only"}
         for item in template["rule_reviews"]
@@ -162,7 +163,66 @@ def test_v1_agent_findings_remain_readable():
     for review in payload["rule_reviews"]:
         review.pop("platform", None)
     payload.pop("platform_overrides", None)
+    payload.pop("precheck_resolutions", None)
     assert validate_agent_findings(payload, dataset_type="process") == []
+
+
+def test_precheck_resolution_requires_exact_evidence_backed_refutation():
+    payload = _valid_payload()
+    payload["precheck_resolutions"] = [
+        {
+            "rule_id": "process.flow.semantic_match",
+            "location": "输入/输出 / 钢材",
+            "resolution": "refuted",
+            "reason": "关联流快照显示已有 Product flow 和完整分类。",
+            "evidence_refs": ["snapshots/related-flows/flow-steel_01.00.000.json"],
+        }
+    ]
+
+    assert validate_agent_findings(payload, dataset_type="process") == []
+
+    duplicate = dict(payload["precheck_resolutions"][0])
+    payload["precheck_resolutions"].append(duplicate)
+    assert any(
+        "duplicate resolution target" in error
+        for error in validate_agent_findings(payload, dataset_type="process")
+    )
+
+
+def test_precheck_resolution_rejects_missing_reason_or_evidence():
+    payload = _valid_payload()
+    payload["precheck_resolutions"] = [
+        {
+            "rule_id": "process.flow.semantic_match",
+            "location": "输入/输出 / 钢材",
+            "resolution": "refuted",
+            "reason": "",
+            "evidence_refs": [],
+        }
+    ]
+
+    errors = validate_agent_findings(payload, dataset_type="process")
+
+    assert any("reason is required" in error for error in errors)
+    assert any("evidence_refs requires at least one" in error for error in errors)
+
+
+def test_precheck_resolution_rejects_surrounding_target_whitespace():
+    payload = _valid_payload()
+    payload["precheck_resolutions"] = [
+        {
+            "rule_id": " process.flow.semantic_match ",
+            "location": " 输入/输出 / 钢材 ",
+            "resolution": "refuted",
+            "reason": "关联流证据显示该发现不成立。",
+            "evidence_refs": ["snapshots/related-flows/flow-steel.json"],
+        }
+    ]
+
+    errors = validate_agent_findings(payload, dataset_type="process")
+
+    assert any("rule_id must not have surrounding whitespace" in error for error in errors)
+    assert any("location must not have surrounding whitespace" in error for error in errors)
 
 
 def test_platform_projection_requires_message_for_submitter_dispositions():

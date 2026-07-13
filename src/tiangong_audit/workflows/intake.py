@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 import json
 from pathlib import Path
@@ -75,11 +76,27 @@ def intake_review(
     manifest.artifacts["review_task"] = _case_path_label(snapshots / "review-task.json", root)
     manifest.artifacts["dataset_raw"] = _case_path_label(snapshots / "dataset.raw.json", root)
 
+    normalization_payload = dataset_payload
+    flow_evidence_summary: dict[str, Any] | None = None
+    if dataset_type == "process":
+        normalization_payload, flow_evidence_summary = _materialize_process_flows(
+            dataset_payload,
+            dataset_api=dataset_api,
+            snapshots=snapshots,
+            root=root,
+        )
+        enriched_path = snapshots / "dataset.enriched.json"
+        _write_json(enriched_path, normalization_payload)
+        manifest.artifacts["dataset_enriched"] = _case_path_label(enriched_path, root)
+        manifest.artifacts["flow_metadata"] = _case_path_label(
+            snapshots / "flow-metadata.json", root
+        )
+
     guardrails = load_skill_guardrails(root)
     precheck_summary: dict[str, Any] | None = None
     model_evidence_summary: dict[str, Any] | None = None
     try:
-        normalized = normalize_dataset(dataset_payload)
+        normalized = normalize_dataset(normalization_payload)
     except ValueError:
         normalized = None
     if normalized:
@@ -154,8 +171,117 @@ def intake_review(
         "check_count": source_summary.get("check_count", 0),
         "precheck_summary": precheck_summary,
         "model_evidence_summary": model_evidence_summary,
+        "flow_evidence_summary": flow_evidence_summary,
         "artifacts": dict(manifest.artifacts),
     }
+
+
+def _materialize_process_flows(
+    payload: dict[str, Any],
+    *,
+    dataset_api: Any,
+    snapshots: Path,
+    root: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    enriched = deepcopy(payload)
+    exchanges = _process_exchange_rows(enriched)
+    related_dir = snapshots / "related-flows"
+    cache: dict[tuple[str, str], dict[str, Any]] = {}
+    reference_counts: dict[tuple[str, str], int] = {}
+
+    for exchange in exchanges:
+        reference = exchange.get("referenceToFlowDataSet") or {}
+        flow_id = str(
+            reference.get("@refObjectId")
+            or reference.get("refObjectId")
+            or reference.get("uuid")
+            or reference.get("@uuid")
+            or ""
+        )
+        version = str(reference.get("@version") or reference.get("version") or "")
+        key = (flow_id, version)
+        reference_counts[key] = reference_counts.get(key, 0) + 1
+        if key not in cache:
+            cache[key] = _fetch_flow_evidence(
+                flow_id,
+                version,
+                dataset_api=dataset_api,
+                related_dir=related_dir,
+                root=root,
+            )
+        evidence = cache[key]
+        exchange["flowMetadataStatus"] = evidence["status"]
+        if evidence.get("error"):
+            exchange["flowMetadataError"] = evidence["error"]
+        if evidence["status"] == "resolved":
+            exchange["flowDataSet"] = deepcopy(evidence["flow_dataset"])
+
+    records = []
+    for key, evidence in cache.items():
+        record = {
+            "flow_id": key[0],
+            "version": key[1],
+            "status": evidence["status"],
+            "reference_count": reference_counts[key],
+        }
+        for field in ("path", "error"):
+            if evidence.get(field):
+                record[field] = evidence[field]
+        records.append(record)
+    _write_json(snapshots / "flow-metadata.json", {"flows": records})
+    summary = {
+        "reference_count": len(exchanges),
+        "unique_flow_count": len(cache),
+        "resolved_count": sum(item["status"] == "resolved" for item in cache.values()),
+        "unresolved_count": sum(item["status"] != "resolved" for item in cache.values()),
+    }
+    return enriched, summary
+
+
+def _process_exchange_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    process = payload.get("processDataSet")
+    if not isinstance(process, dict):
+        return []
+    exchange_value = (process.get("exchanges") or {}).get("exchange")
+    if isinstance(exchange_value, dict):
+        return [exchange_value]
+    if isinstance(exchange_value, list):
+        return [item for item in exchange_value if isinstance(item, dict)]
+    return []
+
+
+def _fetch_flow_evidence(
+    flow_id: str,
+    version: str,
+    *,
+    dataset_api: Any,
+    related_dir: Path,
+    root: Path,
+) -> dict[str, Any]:
+    if not flow_id:
+        return {"status": "not_fetched", "error": "exchange flow reference has no UUID"}
+    if not version:
+        return {"status": "not_fetched", "error": "exchange flow reference has no version"}
+    try:
+        row = dataset_api.get_flow(flow_id, version)
+    except tiangong_api.TiangongAPIError as error:
+        message = str(error)
+        status = "not_found" if "not found" in message.lower() else "fetch_failed"
+        return {"status": status, "error": message}
+
+    flow_payload = _dataset_payload(row)
+    flow_dataset = flow_payload.get("flowDataSet") if isinstance(flow_payload, dict) else None
+    related_dir.mkdir(parents=True, exist_ok=True)
+    target = related_dir / f"{_safe_filename(flow_id)}_{_safe_filename(version or 'latest')}.json"
+    _write_json(target, row)
+    path = _case_path_label(target, root)
+    if not isinstance(flow_dataset, dict):
+        return {
+            "status": "parse_failed",
+            "error": "flow payload does not contain flowDataSet",
+            "path": path,
+        }
+    return {"status": "resolved", "flow_dataset": flow_dataset, "path": path}
 
 
 def _get_or_create_case(
@@ -266,9 +392,27 @@ def _materialize_model_linked_processes(
             continue
         target = linked_dir / f"{_safe_filename(process_id)}_{_safe_filename(version)}.json"
         _write_json(target, row)
-        fetched.append({"process_id": process_id, "version": version, "path": _case_path_label(target, root)})
+        process_payload = _dataset_payload(row)
+        flow_evidence_dir = linked_dir / (
+            f"{_safe_filename(process_id)}_{_safe_filename(version)}.evidence"
+        )
+        enriched_process, flow_evidence_summary = _materialize_process_flows(
+            process_payload,
+            dataset_api=dataset_api,
+            snapshots=flow_evidence_dir,
+            root=root,
+        )
+        _write_json(flow_evidence_dir / "dataset.enriched.json", enriched_process)
+        fetched.append(
+            {
+                "process_id": process_id,
+                "version": version,
+                "path": _case_path_label(target, root),
+                "flow_evidence_summary": flow_evidence_summary,
+            }
+        )
         try:
-            normalized = normalize_dataset(_dataset_payload(row))
+            normalized = normalize_dataset(enriched_process)
             if normalized.get("dataset_type") == "process":
                 precheck = run_deterministic_checks(normalized, guardrails=guardrails)
                 precheck["linked_process_ref"] = ref

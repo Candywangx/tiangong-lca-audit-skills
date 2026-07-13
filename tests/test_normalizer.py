@@ -239,6 +239,115 @@ def test_raw_tidas_process_extracts_exchange_and_flow_dataset_metadata():
     assert calcium_carbonate["name"]["zh"] == "碳酸钙投入"
 
 
+def test_raw_tidas_process_reads_platform_prefixed_flow_classification():
+    payload = {
+        "processDataSet": {
+            "processInformation": {"dataSetInformation": {"referenceToReferenceFlow": "0"}},
+            "exchanges": {
+                "exchange": {
+                    "@dataSetInternalID": "0",
+                    "exchangeDirection": "Output",
+                    "referenceToFlowDataSet": {
+                        "@refObjectId": "flow-steel",
+                        "@version": "01.00.000",
+                    },
+                    "flowDataSet": {
+                        "flowInformation": {
+                            "dataSetInformation": {
+                                "classificationInformation": {
+                                    "common:classification": {
+                                        "common:class": [
+                                            {"@level": "0", "#text": "Materials"},
+                                            {"@level": "1", "#text": "Steel products"},
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "modellingAndValidation": {
+                            "LCIMethod": {"typeOfDataSet": "Product flow"}
+                        },
+                    },
+                }
+            },
+        }
+    }
+
+    exchange = normalize_dataset(payload)["exchanges"]["outputs"][0]
+
+    assert exchange["flow_type"] == "Product flow"
+    assert exchange["classification"] == [
+        {"level": "0", "name": "Materials"},
+        {"level": "1", "name": "Steel products"},
+    ]
+    assert exchange["flow_metadata_status"] == "resolved"
+
+
+def test_raw_tidas_process_accepts_list_valued_classification_container():
+    for classification_key, class_key in (
+        ("common:classification", "common:class"),
+        ("classification", "class"),
+    ):
+        payload = {
+            "processDataSet": {
+                "processInformation": {"dataSetInformation": {}},
+                "exchanges": {
+                    "exchange": {
+                        "exchangeDirection": "Input",
+                        "referenceToFlowDataSet": {
+                            "@refObjectId": "flow-list-classification",
+                            "@version": "01.00.000",
+                        },
+                        "flowDataSet": {
+                            "flowInformation": {
+                                "dataSetInformation": {
+                                    "classificationInformation": {
+                                        classification_key: [
+                                            {
+                                                class_key: {
+                                                    "@level": "1",
+                                                    "#text": "Steel products",
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                }
+            },
+        }
+
+        exchange = normalize_dataset(payload)["exchanges"]["inputs"][0]
+
+        assert exchange["classification"] == [
+            {"level": "1", "name": "Steel products"}
+        ]
+
+
+def test_raw_tidas_reference_without_embedded_flow_is_not_fetched():
+    payload = {
+        "processDataSet": {
+            "processInformation": {"dataSetInformation": {}},
+            "exchanges": {
+                "exchange": {
+                    "@dataSetInternalID": "1",
+                    "exchangeDirection": "Input",
+                    "referenceToFlowDataSet": {
+                        "@refObjectId": "flow-water",
+                        "@version": "01.00.000",
+                    },
+                }
+            },
+        }
+    }
+
+    exchange = normalize_dataset(payload)["exchanges"]["inputs"][0]
+
+    assert exchange["flow_metadata_status"] == "not_fetched"
+
+
 def test_raw_tidas_process_extracts_common_fields_and_process_quantitative_reference():
     payload = {
         "processDataSet": {
