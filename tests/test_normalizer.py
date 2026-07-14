@@ -326,6 +326,52 @@ def test_raw_tidas_process_accepts_list_valued_classification_container():
         ]
 
 
+def test_raw_tidas_process_reads_elementary_flow_categorization():
+    payload = {
+        "processDataSet": {
+            "processInformation": {"dataSetInformation": {}},
+            "exchanges": {
+                "exchange": {
+                    "exchangeDirection": "Output",
+                    "referenceToFlowDataSet": {
+                        "@refObjectId": "flow-carbon-dioxide",
+                        "@version": "03.00.004",
+                    },
+                    "flowDataSet": {
+                        "flowInformation": {
+                            "dataSetInformation": {
+                                "classificationInformation": {
+                                    "common:elementaryFlowCategorization": {
+                                        "common:category": [
+                                            {"@level": "0", "#text": "Emissions"},
+                                            {"@level": "1", "#text": "Emissions to air"},
+                                            {
+                                                "@level": "2",
+                                                "#text": "Emissions to air, unspecified",
+                                            },
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "modellingAndValidation": {
+                            "LCIMethod": {"typeOfDataSet": "Elementary flow"}
+                        },
+                    },
+                }
+            },
+        }
+    }
+
+    exchange = normalize_dataset(payload)["exchanges"]["outputs"][0]
+
+    assert exchange["classification"] == [
+        {"level": "0", "name": "Emissions"},
+        {"level": "1", "name": "Emissions to air"},
+        {"level": "2", "name": "Emissions to air, unspecified"},
+    ]
+
+
 def test_raw_tidas_reference_without_embedded_flow_is_not_fetched():
     payload = {
         "processDataSet": {

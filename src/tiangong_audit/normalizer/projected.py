@@ -183,10 +183,17 @@ def _classifications(value: Any) -> list[dict[str, str]]:
     classification = _first(
         classification_information.get("classification")
         or classification_information.get("common:classification")
+        or classification_information.get("elementaryFlowCategorization")
+        or classification_information.get("common:elementaryFlowCategorization")
     ) or {}
     if not isinstance(classification, dict):
         return []
-    classes = classification.get("class") or classification.get("common:class")
+    classes = (
+        classification.get("class")
+        or classification.get("common:class")
+        or classification.get("category")
+        or classification.get("common:category")
+    )
     result: list[dict[str, str]] = []
     for item in _items(classes):
         if isinstance(item, dict):
