@@ -90,7 +90,7 @@ class FakeClient:
 
     def select(self, table, *, columns="*", filters=None, limit=None):
         if table == "comments":
-            return self.comment_rows
+            raise AssertionError("comments must be read through the api facade")
         if table == "sources":
             return self.source_rows
         raise AssertionError(f"unexpected table: {table}")
@@ -101,6 +101,11 @@ class FakeReviewAPI:
         self.client = client
         self.saved = []
         self.submitted = []
+        self.comment_reads = []
+
+    def get_comments(self, review_id, *, scope="mine"):
+        self.comment_reads.append((review_id, scope))
+        return self.client.comment_rows
 
     def get_task(self, review_id):
         assert review_id == "review-1"
@@ -224,6 +229,7 @@ def test_process_pass_workflow_creates_source_and_saves_draft_without_submit(tmp
     assert [name for name, _ in client.functions] == ["app_dataset_create"]
     assert review_api.saved[0][0] == "review-1"
     assert review_api.submitted == []
+    assert review_api.comment_reads == [("review-1", "mine"), ("review-1", "mine")]
     review = review_api.saved[0][1]["modellingAndValidation"]["validation"]["review"][0]
     compliance = review_api.saved[0][1]["modellingAndValidation"]["complianceDeclarations"]
     assert review["@type"] == "Independent external review"

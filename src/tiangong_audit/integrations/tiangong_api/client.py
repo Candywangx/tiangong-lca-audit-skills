@@ -184,12 +184,16 @@ class TiangongAPIClient:
     def _can_login(self) -> bool:
         return bool(self.email and self.password)
 
-    def _headers(self) -> dict[str, str]:
-        return {
+    def _headers(self, *, schema: str | None = None, method: str = "GET") -> dict[str, str]:
+        headers = {
             "apikey": self.publishable_key,
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json",
         }
+        if schema is not None:
+            profile = "Accept-Profile" if method in {"GET", "HEAD"} else "Content-Profile"
+            headers[profile] = schema
+        return headers
 
     def _login(self) -> None:
         """Exchange the dedicated review account credentials for a fresh token."""
@@ -233,6 +237,7 @@ class TiangongAPIClient:
         *,
         params: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
+        schema: str | None = None,
     ) -> Any:
         url = f"{self.supabase_url}/{path.lstrip('/')}"
         if not self.access_token:
@@ -243,7 +248,7 @@ class TiangongAPIClient:
                 url,
                 params=params,
                 json=payload,
-                headers=self._headers(),
+                headers=self._headers(schema=schema, method=method),
                 timeout=self.timeout,
             )
         except requests.RequestException as error:
@@ -257,7 +262,7 @@ class TiangongAPIClient:
                     url,
                     params=params,
                     json=payload,
-                    headers=self._headers(),
+                    headers=self._headers(schema=schema, method=method),
                     timeout=self.timeout,
                 )
             except requests.RequestException as error:
@@ -273,8 +278,8 @@ class TiangongAPIClient:
             raise TiangongAPIError("Platform returned invalid JSON") from error
 
     def rpc(self, name: str, payload: dict[str, Any]) -> Any:
-        """Call a read-only Supabase RPC."""
-        return self._request("POST", f"rest/v1/rpc/{name}", payload=payload)
+        """Call a read-only RPC through the platform's api schema facade."""
+        return self._request("POST", f"rest/v1/rpc/{name}", payload=payload, schema="api")
 
     def command(self, name: str, payload: dict[str, Any]) -> Any:
         """Call a write-capable Supabase RPC after writes are explicitly enabled."""
@@ -293,12 +298,12 @@ class TiangongAPIClient:
         filters: dict[str, Any] | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Read rows from a Supabase PostgREST table."""
+        """Read core entity rows from public; use RPCs for reviews and comments."""
         params: dict[str, Any] = {"select": columns}
         params.update(filters or {})
         if limit is not None:
             params["limit"] = limit
-        result = self._request("GET", f"rest/v1/{table}", params=params)
+        result = self._request("GET", f"rest/v1/{table}", params=params, schema="public")
         if not isinstance(result, list):
             raise TiangongAPIError(f"Expected a list response from table {table}")
         return result

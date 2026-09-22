@@ -284,6 +284,7 @@ def test_rpc_uses_supabase_endpoint_and_auth_headers():
     assert kwargs["json"] == {"p_status": "unassigned"}
     assert kwargs["headers"]["apikey"] == "public-key"
     assert kwargs["headers"]["Authorization"] == "Bearer user-token"
+    assert kwargs["headers"]["Content-Profile"] == "api"
 
 
 def test_expired_access_token_falls_back_to_account_login_and_retries():
@@ -312,6 +313,9 @@ def test_expired_access_token_falls_back_to_account_login_and_retries():
         "password": "secret",
     }
     assert session.calls[2][2]["headers"]["Authorization"] == "Bearer fresh-token"
+    assert session.calls[0][2]["headers"]["Content-Profile"] == "api"
+    assert session.calls[2][2]["headers"]["Content-Profile"] == "api"
+    assert "Content-Profile" not in session.calls[1][2]["headers"]
 
 
 def test_bad_jwt_403_falls_back_to_account_login_and_retries():
@@ -375,6 +379,9 @@ def test_malformed_jwt_from_edge_function_refreshes_token_and_retries():
     )
     assert session.calls[2][1].endswith("/functions/v1/app_review_save_comment_draft")
     assert session.calls[2][2]["headers"]["Authorization"] == "Bearer fresh-token"
+    for _, _, kwargs in session.calls:
+        assert "Content-Profile" not in kwargs["headers"]
+        assert "Accept-Profile" not in kwargs["headers"]
 
 
 def test_account_credentials_can_log_in_without_an_access_token(tmp_path, monkeypatch):
@@ -440,8 +447,10 @@ def test_admin_queue_uses_real_platform_rpc_parameters():
 
     assert result["total"] == 14
     assert result["items"] == [{"id": "review-1", "total_count": 14}]
+    assert session.calls[0][1].endswith("/rpc/qry_review_get_admin_queue_items_v4")
     assert session.calls[0][2]["json"] == {
         "p_status": "unassigned",
+        "p_query": None,
         "p_page": 1,
         "p_page_size": 10,
         "p_sort_by": "modified_at",
@@ -456,7 +465,45 @@ def test_member_queue_uses_real_platform_rpc():
     result = api.get_member_tasks(status="pending", page=2, page_size=5)
 
     assert result == {"items": [], "total": 0, "page": 2, "page_size": 5}
-    assert session.calls[0][1].endswith("/rest/v1/rpc/qry_review_get_member_queue_items")
+    assert session.calls[0][1].endswith("/rest/v1/rpc/qry_review_get_member_queue_items_v4")
+    assert session.calls[0][2]["json"]["p_query"] is None
+
+
+def test_review_detail_reads_api_schema_without_changing_task_parameters():
+    task = {"id": "review-1", "data_id": "model-1", "data_version": "01.01.000"}
+    session = FakeSession([task])
+
+    assert ReviewAPI(make_client(session)).get_task("review-1") == task
+
+    _, url, kwargs = session.calls[0]
+    assert url.endswith("/rpc/qry_review_get_items")
+    assert kwargs["headers"]["Content-Profile"] == "api"
+    assert kwargs["json"] == {
+        "p_review_ids": ["review-1"],
+        "p_data_id": None,
+        "p_data_version": None,
+        "p_state_codes": None,
+    }
+
+
+@pytest.mark.parametrize("scope", ["mine", "all"])
+def test_review_comments_use_facade_rpc(scope):
+    rows = [{"review_id": "review-1", "reviewer_id": "reviewer-1", "state_code": 0}]
+    session = FakeSession(rows)
+
+    assert ReviewAPI(make_client(session)).get_comments("review-1", scope=scope) == rows
+
+    _, url, kwargs = session.calls[0]
+    assert url.endswith("/rpc/qry_review_get_comment_items")
+    assert kwargs["headers"]["Content-Profile"] == "api"
+    assert kwargs["json"] == {"p_review_id": "review-1", "p_scope": scope}
+
+
+def test_review_comments_reject_non_list_response():
+    api = ReviewAPI(make_client(FakeSession({"unexpected": "response"})))
+
+    with pytest.raises(TiangongAPIError, match="comment.*list"):
+        api.get_comments("review-1")
 
 
 def test_dataset_api_reads_process_by_id_and_version():
@@ -469,6 +516,8 @@ def test_dataset_api_reads_process_by_id_and_version():
     method, url, kwargs = session.calls[0]
     assert method == "GET"
     assert url == "https://example.supabase.co/rest/v1/processes"
+    assert kwargs["headers"]["Accept-Profile"] == "public"
+    assert "Content-Profile" not in kwargs["headers"]
     assert kwargs["params"] == {
         "select": "id,version,json,modified_at,state_code,rule_verification,team_id,reviews",
         "id": "eq.process-1",

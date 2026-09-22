@@ -35,9 +35,10 @@ class ReviewAPI:
         sort_order: str = "descend",
     ) -> dict[str, Any]:
         rows = self.client.rpc(
-            "qry_review_get_admin_queue_items",
+            "qry_review_get_admin_queue_items_v4",
             {
                 "p_status": status,
+                "p_query": None,
                 "p_page": page,
                 "p_page_size": page_size,
                 "p_sort_by": sort_by,
@@ -56,9 +57,10 @@ class ReviewAPI:
         sort_order: str = "descend",
     ) -> dict[str, Any]:
         rows = self.client.rpc(
-            "qry_review_get_member_queue_items",
+            "qry_review_get_member_queue_items_v4",
             {
                 "p_status": status,
+                "p_query": None,
                 "p_page": page,
                 "p_page_size": page_size,
                 "p_sort_by": sort_by,
@@ -80,6 +82,18 @@ class ReviewAPI:
         if not isinstance(rows, list) or not rows:
             raise TiangongAPIError(f"Review task not found: {task_id}")
         return rows[0]
+
+    def get_comments(
+        self, task_id: str, *, scope: Literal["mine", "all"] = "mine"
+    ) -> list[dict[str, Any]]:
+        """Read review comments without accessing the retired public relation."""
+        rows = self.client.rpc(
+            "qry_review_get_comment_items",
+            {"p_review_id": task_id, "p_scope": scope},
+        )
+        if not isinstance(rows, list):
+            raise TiangongAPIError("Platform review comment response must be a list")
+        return rows
 
     def assign_reviewers(
         self,

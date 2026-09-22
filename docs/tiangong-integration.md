@@ -12,13 +12,30 @@
 
 | 用途 | Supabase 接口 |
 | --- | --- |
-| 管理员任务队列 | `qry_review_get_admin_queue_items` |
-| 审核员任务队列 | `qry_review_get_member_queue_items` |
-| 单条审核任务 | `qry_review_get_items` |
-| 过程详情 | `processes` |
-| 模型详情 | `lifecyclemodels` |
-| source dataset 详情 | `sources` |
+| 管理员任务队列 | `api.qry_review_get_admin_queue_items_v4` |
+| 审核员任务队列 | `api.qry_review_get_member_queue_items_v4` |
+| 单条审核任务 | `api.qry_review_get_items` |
+| 审核意见 / 草稿读回 | `api.qry_review_get_comment_items` |
+| 过程详情 | `public.processes` |
+| 模型详情 | `public.lifecyclemodels` |
+| source dataset 详情 | `public.sources` |
 | source 文件下载 | `storage/v1/object/external_docs/...` |
+
+### Schema 迁移兼容
+
+按上游由 `linancn` 合并的 [平台 PR #788](https://github.com/tiangong-lca/platform/pull/788)
+同步：审核 RPC 位于 `api` schema，POST 请求必须带 `Content-Profile: api`；
+核心实体表继续通过 `Accept-Profile: public` 读取。鉴权、Edge Function 和 Storage
+请求不带 PostgREST schema 请求头，token 刷新后的重试仍保留原请求的 schema。
+
+`PGRST202` 中出现 `public.qry_review_get_items` 时，先检查 schema 请求头，不能据此
+认定审核接口已移除。`reviews`、`comments` 等非核心关系应通过 `api` RPC 读取，
+不回退到直接查表。`ReviewAPI.get_comments(review_id, scope="mine")` 读取当前账号意见，
+管理员可使用 `scope="all"` 读取任务审核记录。
+
+队列接口按 [平台 PR #1042](https://github.com/tiangong-lca/platform/pull/1042)
+同步为 `_v4`，当前未指定搜索时发送 `p_query: null`，保留原分页和排序参数。
+此处更新平台读取协议，不改变审核规则或平台写操作授权要求。
 
 ## TIDAS SDK 结构校验
 
@@ -137,8 +154,10 @@ uv run python -m tiangong_audit.cli process-pass-flow \
 ```
 
 该命令使用 `pass` 语义角色（默认审核员账号），只会上传 `external_docs/{uuid}.docx`、调用 `app_dataset_create`
-创建 `sources`、调用 `app_review_save_comment_draft` 暂存评论，并随后读回 `comments` 和
-`sources` 验收。它不会调用 `app_review_submit_comment`，不会默认分配任务，不会把 member 待审核任务移入已审核队列。dry-run、写入和失败记录会进入当前 case 的 `operations/oplog.jsonl`。
+创建 `sources`、调用 `app_review_save_comment_draft` 暂存评论，并随后通过
+`qry_review_get_comment_items` 读回评论、读取 `sources` 验收。它不会调用
+`app_review_submit_comment`，不会默认分配任务，不会把 member 待审核任务移入已审核队列。
+dry-run、写入和失败记录会进入当前 case 的 `operations/oplog.jsonl`。
 
 ## 驳回建议草稿命令
 

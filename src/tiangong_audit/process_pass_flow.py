@@ -244,12 +244,7 @@ class ProcessPassWorkflow:
         write_json(output_dir / "task-before.json", task)
         self._check_task(task)
 
-        comment_before = self.client.select(
-            "comments",
-            columns="review_id,reviewer_id,json,state_code,modified_at",
-            filters={"review_id": f"eq.{review_id}", "reviewer_id": f"eq.{self.current_user_id}"},
-            limit=1,
-        )
+        comment_before = self._current_comments(review_id)
         write_json(output_dir / "comment-before.json", comment_before)
         if not comment_before:
             raise ProcessPassFlowError("Current reviewer comment row not found")
@@ -330,12 +325,7 @@ class ProcessPassWorkflow:
         save_result = self.review_api.save_comment_draft(review_id, comment_json)
         write_json(output_dir / "save-comment-response.json", save_result)
 
-        comment_rows = self.client.select(
-            "comments",
-            columns="review_id,reviewer_id,json,state_code,modified_at",
-            filters={"review_id": f"eq.{review_id}", "reviewer_id": f"eq.{self.current_user_id}"},
-            limit=1,
-        )
+        comment_rows = self._current_comments(review_id)
         source_rows = self.client.select(
             "sources",
             columns="id,version,json,json_ordered,user_id,state_code,modified_at",
@@ -349,6 +339,14 @@ class ProcessPassWorkflow:
         summary["source_user_id"] = source_rows[0].get("user_id")
         write_json(output_dir / "summary.json", summary)
         return summary
+
+    def _current_comments(self, review_id: str) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in self.review_api.get_comments(review_id, scope="mine")
+            if row.get("review_id") == review_id
+            and row.get("reviewer_id") == self.current_user_id
+        ]
 
     def _check_task(self, task: dict[str, Any]) -> None:
         if task.get("state_code") != 1:
