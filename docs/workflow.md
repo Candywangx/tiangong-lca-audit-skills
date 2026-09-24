@@ -5,7 +5,7 @@
 1. 推荐以 `intake-review --review-id <review-id> --account-role admin` 作为平台只读取数入口；case 主目录始终是 `cases/active/<review-id>/`，不传 `--batch-id` 时 `batch_id` 只作为元数据写入 `case.json`（默认 `<yyyymmdd>-<account-role>`）。查看待审核数据统一走管理员账号，只有写回建议或通过草稿时才按 `reject` / `pass` 区分管理员和审核员语义角色。
 2. `intake-review` 自动读取 `.env`，检查现有 token；若 token 失效且已配置账号密码，自动登录刷新并重试请求。
 3. `intake-review` 拉取 review 任务、过程或模型数据集，保存平台任务、原始数据集和标准化数据，更新 `case.json` 的 `fetched` 与 `normalized`。
-4. `intake-review` 从数据集中解析 source dataset 引用，读取平台 `sources` 表，继续追踪到 `referenceToDigitalFile` / `external_docs`，下载 source 文档并抽取基础文本；PDF/Office/图片或复杂表格 source 需要由 Agent 直接调用项目内 `skill/document-granular-decompose` 生成 image-aware 全文，再用 `source attach-extraction --review-id <review-id> --source-dir source-00N --extracted-text <fulltext>` 回填为该 source 的正式抽取文本；若抽取文本引用 Supplementary Table、appendix、supporting information、source table、附表、附录或补充材料，则在 `sources/*/manifest.json` 写入 `related_artifact_requirements`，后续审核必须继续追踪或记录不可取得的具体影响字段。
+4. `intake-review` 从数据集中解析 source dataset 引用，读取平台 `sources` 表，继续追踪到 `referenceToDigitalFile` / `external_docs`，下载 source 文档并抽取基础文本；PDF/Office/图片或复杂表格 source 需要由 Agent 直接调用项目内 `skill/document-granular-decompose` 默认执行 advanced 高保真 parse（小 source 同步，长文档异步；需要独立图片描述时才启用图片增强），再用 `source attach-extraction --review-id <review-id> --source-dir source-00N --extracted-text <DIR/extracted.md> --extraction-dir <DIR>` 回填正式抽取文本，并把完整包导入 source 的 `parsing/` 与 manifest 溯源元数据；若抽取文本引用 Supplementary Table、appendix、supporting information、source table、附表、附录或补充材料，则在 `sources/*/manifest.json` 写入 `related_artifact_requirements`，后续审核必须继续追踪或记录不可取得的具体影响字段。
 5. `intake-review` 从数据集自动生成待核验字段 claims，写入 `source-checks/claims.json`，并生成 `agent-review/agent-findings.template.json` 必审规则待复核清单；它不对 source 文本作最终一致性判断。
 6. 平台最新队列快照统一保存到 `cases/queues/<status>.latest.json`；用 `case coverage --queue <queue-json>` 对齐队列和本地 case，判断哪条已审、哪条未审。需要留历史时复制到 `cases/queues/history/<timestamp>.<status>.json`。
 7. 调试时仍可分别运行 `case create`、`fetch-dataset`、`source resolve`、`source fetch` 和 `source claims`。
@@ -33,3 +33,6 @@
 ## 平台化流程
 
 平台接入按“读取 → 标准化 → 审核 → 人工确认 → 写回”演进。审核判断和平台写操作始终保持独立。
+
+解析接口、输出和恢复细节统一见 [request-response.md](../skill/document-granular-decompose/references/request-response.md)。
+审核核对页码、块上下文和原文；图片描述属于模型生成内容，不能作为逐字引文；`pypdf` 不得成为此类 source 的唯一最终证据。

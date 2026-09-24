@@ -1,4 +1,7 @@
+import hashlib
 import json
+
+import pytest
 
 from tiangong_audit.contracts import SourceRef
 from tiangong_audit.sources import (
@@ -438,3 +441,213 @@ def test_attach_extraction_backfills_image_aware_fulltext(tmp_path):
     )
     updated = store.get_case("review-1", batch_id="b-1")
     assert "source_extraction:source-001" in updated.artifacts
+
+
+@pytest.fixture
+def extraction_case(tmp_path):
+    store = CaseStore(tmp_path / "cases")
+    case = store.create_case(review_id="bundle-review", batch_id="b", dataset_type="process")
+    source = tmp_path / "cases" / case.case_dir / "sources/source-001"
+    source.mkdir(parents=True)
+    (source / "extracted.md").write_bytes(b"old text")
+    (source / "source.pdf").write_bytes(b"synthetic source")
+    (source / "manifest.json").write_text(json.dumps({
+        "ref": {"source_id": "s", "custom_ref": "preserve"},
+        "status": "extracted", "extracted_text_path": "extracted.md",
+        "file_path": "source.pdf", "sha256": hashlib.sha256(b"synthetic source").hexdigest(),
+        "reviewer_note": {"keep": True},
+    }))
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "result.json").write_text(json.dumps({
+        "result": [{"text": "Supplementary Table S8", "page_number": 2, "type": None}],
+        "txt": "Raw service text differs from page blocks.\r\n",
+    }))
+    (bundle / "extracted.md").write_bytes(b"## Page 2\r\n\n### Block 1\nSupplementary Table S8\n")
+    (bundle / "fulltext.txt").write_bytes(b"Raw service text differs from page blocks.\r\n")
+    (bundle / "openapi.json").write_text(json.dumps({"openapi": "3.1.0", "paths": {}}))
+    (bundle / "request.json").write_text(json.dumps({
+        "state": "SUCCESS", "task_id": "synthetic-task",
+        "identity": {"endpoint": "/mineru/task", "sha256": hashlib.sha256(b"synthetic source").hexdigest(),
+                     "fields": {"tier": "advanced"}, "query": {"chunk_type": True}},
+        "schema_sha256": hashlib.sha256((bundle / "openapi.json").read_bytes()).hexdigest(),
+        "result_sha256": hashlib.sha256((bundle / "result.json").read_bytes()).hexdigest(),
+    }))
+    return source, bundle, dict(review_id="bundle-review", root=tmp_path,
+        source_dir_name="source-001", extracted_text=bundle / "extracted.md",
+        extraction_dir=bundle, case_store=store, batch_id="b")
+
+
+def _snapshot_tree(path):
+    return {str(item.relative_to(path)): item.read_bytes() for item in path.rglob("*") if item.is_file()}
+
+
+def test_attach_imports_five_local_artifacts_with_hashes(extraction_case):
+    source, bundle, kwargs = extraction_case
+    (bundle / "unrelated.txt").write_text("not part of the bundle")
+    summary = attach_extraction(**kwargs)
+    payload = json.loads((source / "manifest.json").read_text())
+    assert payload["reviewer_note"] == {"keep": True}
+    assert payload["ref"]["custom_ref"] == "preserve"
+    files = payload["extraction_bundle"]["files"]
+    assert set(files) == {"result.json", "extracted.md", "fulltext.txt", "request.json", "openapi.json"}
+    case = kwargs["case_store"].get_case("bundle-review", batch_id="b")
+    for name, metadata in files.items():
+        assert metadata["path"] == f"parsing/{name}"
+        data = (source / metadata["path"]).read_bytes()
+        assert data == (bundle / name).read_bytes()
+        assert metadata["sha256"] == hashlib.sha256(data).hexdigest()
+        assert (kwargs["root"] / "cases" / case.artifacts[f"source_parsing:source-001:{name}"]).read_bytes() == data
+    assert (source / "extracted.md").read_bytes() == (bundle / "extracted.md").read_bytes()
+    assert not (source / "parsing/unrelated.txt").exists()
+    assert summary["extraction_bundle"] == payload["extraction_bundle"]
+    assert payload["related_artifact_requirements"][0]["reference"] == "Supplementary Table S8"
+
+
+@pytest.mark.parametrize("already_imported", [False, True])
+@pytest.mark.parametrize("damage", [
+    "result-hash", "schema-hash", "text-mismatch", "source-hash", "state", "identity",
+    "result-list", "blocks-empty", "blank-text", "page-zero", "page-bool", "page-string",
+    "text-type", "block-type", "txt-type", "raw-mismatch", "missing", "symlink", "dir-symlink",
+])
+def test_attach_rejects_invalid_bundle_without_changes(extraction_case, damage, already_imported):
+    source, bundle, kwargs = extraction_case
+    if already_imported:
+        attach_extraction(**kwargs)
+    request = json.loads((bundle / "request.json").read_text())
+    result = json.loads((bundle / "result.json").read_text())
+    if damage == "result-hash":
+        request["result_sha256"] = "0" * 64
+    elif damage == "schema-hash":
+        request["schema_sha256"] = "0" * 64
+    elif damage == "text-mismatch":
+        supplied = bundle.parent / "different.md"
+        supplied.write_text("different text")
+        kwargs["extracted_text"] = supplied
+    elif damage == "source-hash":
+        request["identity"]["sha256"] = "0" * 64
+    elif damage == "state":
+        request["state"] = "PENDING"
+    elif damage == "identity":
+        request["identity"] = []
+    elif damage == "result-list":
+        result = result["result"]
+    elif damage == "blocks-empty":
+        result["result"] = []
+    elif damage == "blank-text":
+        result["result"][0]["text"] = " \n"
+    elif damage.startswith("page-"):
+        result["result"][0]["page_number"] = {"page-zero": 0, "page-bool": True, "page-string": "2"}[damage]
+    elif damage == "text-type":
+        result["result"][0]["text"] = 123
+    elif damage == "block-type":
+        result["result"][0]["type"] = []
+    elif damage == "txt-type":
+        result["txt"] = 123
+    elif damage == "raw-mismatch":
+        (bundle / "fulltext.txt").write_text("changed")
+    (bundle / "result.json").write_text(json.dumps(result))
+    if damage != "result-hash":
+        request["result_sha256"] = hashlib.sha256((bundle / "result.json").read_bytes()).hexdigest()
+    (bundle / "request.json").write_text(json.dumps(request))
+    if damage in {"missing", "symlink"}:
+        (bundle / "openapi.json").unlink()
+        if damage == "symlink":
+            outside = bundle.parent / "external-schema.json"
+            outside.write_text(json.dumps({"openapi": "3.1.0", "paths": {}}))
+            (bundle / "openapi.json").symlink_to(outside)
+    elif damage == "dir-symlink":
+        alias = bundle.parent / "alias"
+        alias.symlink_to(bundle, target_is_directory=True)
+        kwargs["extraction_dir"] = alias
+    before = _snapshot_tree(kwargs["root"] / "cases")
+    with pytest.raises(ValueError):
+        attach_extraction(**kwargs)
+    assert _snapshot_tree(kwargs["root"] / "cases") == before
+
+
+def test_attach_replacements_preserve_bundle_history_and_text_backups(extraction_case):
+    source, bundle, kwargs = extraction_case
+    attach_extraction(**kwargs)
+    first = _snapshot_tree(source / "parsing")
+    for text in (b"second rendering", b"third rendering"):
+        (bundle / "extracted.md").write_bytes(text)
+        attach_extraction(**kwargs)
+    payload = json.loads((source / "manifest.json").read_text())
+    history = payload["extraction_history"]
+    assert len(history) == 2
+    assert history[0]["directory"] != history[1]["directory"]
+    for name, data in first.items():
+        assert (source / history[0]["directory"] / name).read_bytes() == data
+    assert (source / history[1]["directory"] / "extracted.md").read_bytes() == b"second rendering"
+    backups = [path.read_bytes() for path in source.glob("extracted.*.md")]
+    assert b"old text" in backups and first["extracted.md"] in backups and b"second rendering" in backups
+    # A later text-only attachment must not claim the old bundle produced its text.
+    kwargs.pop("extraction_dir")
+    (bundle / "extracted.md").write_bytes(b"manual text")
+    attach_extraction(**kwargs)
+    payload = json.loads((source / "manifest.json").read_text())
+    assert "extraction_bundle" not in payload
+    assert len(payload["extraction_history"]) == 3
+    case = kwargs["case_store"].get_case("bundle-review", batch_id="b")
+    assert not any(key.startswith("source_parsing:") for key in case.artifacts)
+    history_paths = [value for key, value in case.artifacts.items() if key.startswith("source_parsing_history:")]
+    assert len(history_paths) == 3
+    assert all((kwargs["root"] / "cases" / path / "source-manifest.json").is_file() for path in history_paths)
+
+
+@pytest.mark.parametrize("field,value", [("source_dir_name", "../source-001"),
+    ("source_dir_name", "/tmp/source-001"), ("method", "../escape"), ("method", "bad/name")])
+def test_attach_rejects_unsafe_names(extraction_case, field, value):
+    source, bundle, kwargs = extraction_case
+    kwargs.pop("extraction_dir")
+    kwargs[field] = value
+    before = _snapshot_tree(kwargs["root"] / "cases")
+    with pytest.raises(ValueError):
+        attach_extraction(**kwargs)
+    assert _snapshot_tree(kwargs["root"] / "cases") == before
+
+
+@pytest.mark.parametrize("linked", ["source", "sources", "manifest.json", "extracted.md", "parsing", "parsing-history", "supplied"])
+def test_attach_rejects_symlinks_in_inputs_and_destinations(extraction_case, linked):
+    source, bundle, kwargs = extraction_case
+    if linked == "source":
+        original = source
+    elif linked == "sources":
+        original = source.parent
+    elif linked == "supplied":
+        original = kwargs["extracted_text"]
+    else:
+        original = source / linked
+    if not original.exists():
+        original.mkdir()
+    outside = kwargs["root"] / "outside"
+    original.rename(outside)
+    original.symlink_to(outside, target_is_directory=outside.is_dir())
+    before = _snapshot_tree(kwargs["root"])
+    with pytest.raises(ValueError, match="Unsafe attachment path"):
+        attach_extraction(**kwargs)
+    assert _snapshot_tree(kwargs["root"]) == before
+
+
+@pytest.mark.parametrize("optional", ["absent", "null", "empty"])
+def test_attach_accepts_optional_result_fields_and_unknown_source_hash(extraction_case, optional):
+    source, bundle, kwargs = extraction_case
+    result = {"result": [{"text": "Evidence", "page_number": 1}]}
+    if optional == "null":
+        result["txt"] = None
+        result["result"][0]["type"] = None
+    elif optional == "empty":
+        result["txt"] = ""
+    (bundle / "result.json").write_text(json.dumps(result))
+    # The standalone parser may derive fulltext from blocks when txt is absent.
+    (bundle / "fulltext.txt").write_bytes(b"Evidence")
+    request = json.loads((bundle / "request.json").read_text())
+    request.pop("task_id")
+    request["result_sha256"] = hashlib.sha256((bundle / "result.json").read_bytes()).hexdigest()
+    (bundle / "request.json").write_text(json.dumps(request))
+    payload = json.loads((source / "manifest.json").read_text())
+    payload.pop("sha256")
+    (source / "manifest.json").write_text(json.dumps(payload))
+    attach_extraction(**kwargs)
+    assert (source / "parsing/result.json").read_bytes() == (bundle / "result.json").read_bytes()

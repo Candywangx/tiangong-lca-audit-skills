@@ -46,7 +46,7 @@ def test_document_decompose_accepts_base_url_or_full_endpoint(monkeypatch):
     module = load_document_decompose_script()
 
     monkeypatch.setenv("UNSTRUCTURED_API_BASE_URL", "https://example.test")
-    assert module.resolve_api_url("") == "https://example.test/mineru_with_images"
+    assert module.resolve_api_url("") == "https://example.test/mineru"
 
     monkeypatch.setenv(
         "UNSTRUCTURED_API_BASE_URL", "https://example.test/api/v1/mineru_with_images"
@@ -54,7 +54,7 @@ def test_document_decompose_accepts_base_url_or_full_endpoint(monkeypatch):
     assert module.resolve_api_url("") == "https://example.test/api/v1/mineru_with_images"
 
     monkeypatch.setenv("UNSTRUCTURED_API_BASE_URL", "https://example.test/api/v1")
-    assert module.resolve_api_url("") == "https://example.test/api/v1/mineru_with_images"
+    assert module.resolve_api_url("") == "https://example.test/api/v1/mineru"
 
 
 def test_skill_references_are_focused():
@@ -94,6 +94,21 @@ def test_skill_requires_strict_dataset_type_and_linked_evidence():
     assert "关联证据" in input_contract
     assert "不得因为页面主表未显示底层流属性而默认流、单位或类型正确" in input_contract
     assert "平台状态为“已通过”或存在历史通过记录" in audit_policy
+
+
+def test_skill_requires_title_search_and_human_clearance_before_audit():
+    skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    audit_policy = (SKILL / "references/audit-policy.md").read_text(encoding="utf-8")
+    input_contract = (SKILL / "references/input-contract.md").read_text(encoding="utf-8")
+    platform_ops = (SKILL / "references/platform-operations.md").read_text(encoding="utf-8")
+
+    assert "审核前题目查重" in skill_text
+    assert "UUID 不同" in audit_policy
+    assert "完整原始 JSON 和版本" in audit_policy
+    assert "暂停审核" in audit_policy
+    assert "人工确认" in audit_policy
+    assert "题目查重" in input_contract
+    assert "题目查重" in platform_ops
 
 
 def test_process_audit_covers_cfia_recycling_allocation_water_and_dqr():

@@ -88,7 +88,7 @@
 
 source 核验由 Agent 语义判断完成，不由程序字符串匹配完成。执行步骤：
 
-1. 先确认已取得可读的 PDF、全文、附录、source table、raw import 表或工程资料。对 PDF、Office、图片或复杂表格材料，必须直接调用项目内 `skill/document-granular-decompose` 生成 image-aware 全文；仅有 `pypdf` 抽取文本时，复杂表格、图片和补充材料相关事实不得视为已完整抽取。必须检查 `sources/*/manifest.json` 的 `related_artifact_requirements`，并主动检索主文中的 Supplementary Table、appendix、supporting information、source table 等引用；若主文指向 Supplementary Table S8 这类补充表但文件未取得，应继续从平台 source dataset、出版商/DOI 页面或文中 URL 获取。无法取得时记录缺失的具体字段，不得把主文未包含的数值判为已支持。
+1. 先确认已取得可读的 PDF、全文、附录、source table、raw import 表或工程资料。对 PDF、Office、图片或复杂表格材料，直接调用项目内 `skill/document-granular-decompose` 默认 advanced 高保真解析；需要独立图片描述时才启用图片增强。按 `input-contract.md` 导入页/块标注文本和完整证据包；`pypdf` 基础文本不能作为唯一最终证据。核对 JSON 块中的表格、数值、单位和上下文，不能因块类型为空而忽略表格；图片描述是模型生成内容，核对原图后使用，不得作为逐字引文。必须检查 `sources/*/manifest.json` 的 `related_artifact_requirements`，并主动检索主文中的 Supplementary Table、appendix、supporting information、source table 等引用；若主文指向 Supplementary Table S8 这类补充表但文件未取得，应继续从平台 source dataset、出版商/DOI 页面或文中 URL 获取。无法取得时记录缺失的具体字段，不得把主文未包含的数值判为已支持。
 2. 读取 `source-checks/claims.json` 中待核验字段；claims 必须覆盖所有输入/输出交换，而不只是参考流。没有 claims 或发现 claims 漏掉交换时，从数据集名称、路线、位置、年份、数据集类型、技术描述、参考流和全部关键清单自行补充待核验字段。
 3. 对每个字段同时读取数据集字段值、字段所在窗口说明、source 摘录或 PDF 原文上下文；必要时在 `sources/*/extracted.md` 中继续检索同义词、参数、表格标题和上下文。
 4. 将字段拆成可核查事实，例如对象、数量、单位口径、基准流或 qref、流身份、地区、年份、技术路线、边界、分配、截断和数据处理口径；不要要求 source 出现平台字段的完整显示字符串。

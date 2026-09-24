@@ -7,6 +7,7 @@ CASE_SCHEMA_VERSION = "tiangong-audit-case-v1"
 
 DEFAULT_CASE_STEPS: dict[str, bool] = {
     "fetched": False,
+    "title_duplicate_checked": False,
     "normalized": False,
     "sources_resolved": False,
     "sources_downloaded": False,

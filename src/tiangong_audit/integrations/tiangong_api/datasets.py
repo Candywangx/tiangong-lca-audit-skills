@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .client import TiangongAPIClient, TiangongAPIError
@@ -49,6 +50,46 @@ class DatasetAPI:
 
     def get_model(self, dataset_id: str, version: str) -> dict[str, Any]:
         return self.get_dataset(dataset_id, version, DatasetType.MODEL)
+
+    def search_title(
+        self, dataset_type: DatasetType | str, language: str, title: str
+    ) -> list[dict[str, Any]]:
+        """Read rows whose JSON contains the exact localized baseName."""
+        if dataset_type not in (DatasetType.PROCESS, DatasetType.MODEL):
+            raise ValueError(f"Unsupported dataset type for title search: {dataset_type!r}")
+        if language not in ("zh", "en") or not title:
+            raise ValueError("Title search requires a language and nonblank title")
+        is_process = dataset_type == DatasetType.PROCESS
+        table = "processes" if is_process else "lifecyclemodels"
+        column = "json" if is_process else "json_tg"
+        wrapper = "processDataSet" if is_process else "lifeCycleModelDataSet"
+        info = "processInformation" if is_process else "lifeCycleModelInformation"
+        fragment = {
+            wrapper: {
+                info: {
+                    "dataSetInformation": {
+                        "name": {"baseName": [{"@xml:lang": language, "#text": title}]}
+                    }
+                }
+            }
+        }
+        rows: list[dict[str, Any]] = []
+        while True:
+            page = self.client.select(
+                table,
+                columns=PROCESS_COLUMNS if is_process else MODEL_COLUMNS,
+                filters={
+                    column: "cs." + json.dumps(fragment, ensure_ascii=False, separators=(",", ":")),
+                    "order": "id.asc,version.asc",
+                },
+                limit=1000,
+                offset=len(rows),
+            )
+            if not page:
+                return rows
+            rows.extend(page)
+            if len(rows) >= 1000:
+                raise TiangongAPIError("Title search returned at least 1000 rows; cannot verify completeness")
 
     def get_source(self, source_id: str, version: str = "") -> dict[str, Any]:
         filters = {"id": f"eq.{source_id}"}

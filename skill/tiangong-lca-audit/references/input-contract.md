@@ -8,6 +8,8 @@
 - 页面截图或用户描述；此类输入通常只能做局部审核。
 - 已有审核意见、报告草稿或人工纠偏。
 
+完整审核还需要平台题目查重证据；执行条件和暂停边界以 `audit-policy.md` 的“审核前题目查重关卡”为准。只提供离线数据、无法验证平台搜索结果时，可整理输入，但不得跳过关卡形成完整审核结论。
+
 ## 2. 类型识别
 
 优先使用显式类型字段。没有显式类型时：
@@ -78,10 +80,16 @@
 source 核验材料可以包括：
 
 - `source-refs.json`：从数据集解析出的 source 引用。
-- `sources/*/manifest.json`：source 下载、hash、抽取状态、错误信息，以及 `related_artifact_requirements` 中列出的补充材料追踪要求。PDF/Office/图片或复杂表格 source 应使用项目内 `skill/document-granular-decompose` 生成 image-aware 全文，并把该全文作为当前 case 的 source 证据保存。
-- `sources/*/extracted.md`：PDF、文本或 JSON source 的抽取文本。
+- `sources/*/manifest.json`：source 下载、hash、抽取状态、错误信息，以及 `related_artifact_requirements` 中列出的补充材料追踪要求。PDF/Office/图片或复杂表格 source 应使用项目内 `skill/document-granular-decompose` 默认 advanced 高保真解析，只有需独立图片描述时启用图片增强；manifest 同时保存导入证据包的解析溯源元数据。
+- `sources/*/extracted.md`：正式抽取文本；解析证据应保留页码和块索引。
+- `sources/*/parsing/`：导入的完整解析证据包。业务 JSON、块渲染文本、服务全文和请求/schema 记录分别保留，文件语义见 [解析合同](../../document-granular-decompose/references/request-response.md)。
 - PDF/全文、补充材料、附录、source table、raw import 表或工程资料的本地路径、URL、checksum 或受控附件位置。
 - `source-checks/claims.json`：程序抽取的待核验字段清单，只是 Agent source 语义核验的输入，不是核验结论；过程数据必须把所有输入/输出交换的方向、名称、数量和单位等可见字段纳入 claims，不得只抽取参考流。
 - `source-checks/checks.json`：Agent 或人工阅读数据集字段与 source 原文后写出的字段级语义核验状态；不得由字符串匹配程序自动生成最终结论。
+
+取得解析包后，用 `source attach-extraction --review-id <review-id> --source-dir source-00N --extracted-text <DIR/extracted.md> --extraction-dir <DIR>` 回填。
+`--extracted-text` 指向带页/块定位的文本；`--extraction-dir` 同时导入完整包到 source 的 `parsing/`，保留旧抽取文本、更新 manifest 并重扫补充材料引用。
+小 source 可同步解析，长文档和图片增强优先异步；执行与恢复按 [解析 Skill](../../document-granular-decompose/SKILL.md)。
+`pypdf` 基础文本不得作为 PDF/Office/图片或复杂表格的唯一最终证据。图片描述是模型生成内容，必须核对原图，不能当作原文逐字引用。
 
 只有 source 摘录、页码、表名、附录或可复核换算链能直接支持的内容，才能作为 source 证据。若字段依赖补充表或 source table，但当前只取得主文 PDF，应记录缺失的具体字段，例如 amount、unit basis、qref、flow identity、location/year、boundary 或 allocation；不得把 source 不可用、补充表缺失或字段未命中解释为来源已通过。

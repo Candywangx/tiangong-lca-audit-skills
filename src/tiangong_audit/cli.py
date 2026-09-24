@@ -82,6 +82,9 @@ REQUIRED_PATHS = (
     "skill/document-granular-decompose/references/request-response.md",
     "skill/document-granular-decompose/assets/config.example.env",
     "skill/document-granular-decompose/scripts/mineru_fulltext_extract.py",
+    "skill/document-granular-decompose/scripts/mineru_client.py",
+    "skill/document-granular-decompose/scripts/mineru_jobs.py",
+    "skill/document-granular-decompose/scripts/mineru_results.py",
     "src/tiangong_audit/__init__.py",
     "src/tiangong_audit/case_store.py",
     "src/tiangong_audit/contracts/__init__.py",
@@ -1031,6 +1034,7 @@ def source_attach_extraction(args: argparse.Namespace) -> int:
             root=ROOT,
             source_dir_name=args.source_dir,
             extracted_text=Path(args.extracted_text),
+            extraction_dir=(Path(args.extraction_dir) if getattr(args, "extraction_dir", None) else None),
             method=args.method,
             case_store=_case_store(),
             batch_id=args.batch_id,
@@ -1447,6 +1451,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--extracted-text",
         required=True,
         help="Path to the full extracted text produced by document-granular-decompose",
+    )
+    source_attach_parser.add_argument(
+        "--extraction-dir",
+        help="Parser bundle directory containing result.json, extracted.md, fulltext.txt, request.json and openapi.json",
     )
     source_attach_parser.add_argument(
         "--method",

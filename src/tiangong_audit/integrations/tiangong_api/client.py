@@ -297,12 +297,15 @@ class TiangongAPIClient:
         columns: str = "*",
         filters: dict[str, Any] | None = None,
         limit: int | None = None,
+        offset: int | None = None,
     ) -> list[dict[str, Any]]:
         """Read core entity rows from public; use RPCs for reviews and comments."""
         params: dict[str, Any] = {"select": columns}
         params.update(filters or {})
         if limit is not None:
             params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
         result = self._request("GET", f"rest/v1/{table}", params=params, schema="public")
         if not isinstance(result, list):
             raise TiangongAPIError(f"Expected a list response from table {table}")
