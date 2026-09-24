@@ -1,8 +1,12 @@
 import json
 import re
+from copy import deepcopy
+
+import pytest
 
 from tiangong_audit.case_store import CaseStore
 from tiangong_audit.workflows import intake_review
+from tiangong_audit.workflows.title_duplicate import require_title_duplicate_clearance
 
 
 class FakePlatformClient:
@@ -21,7 +25,9 @@ class FakePlatformClient:
             }
         ]
 
-    def select(self, table, *, columns="*", filters=None, limit=None):
+    def select(self, table, *, columns="*", filters=None, limit=None, offset=None):
+        if offset:
+            return []
         if table == "lifecyclemodels":
             return []
         if table == "processes":
@@ -129,6 +135,75 @@ def test_intake_review_fetches_task_dataset_sources_and_claims(tmp_path):
     assert manifest.status == "intake_completed"
 
 
+def test_intake_pauses_before_audit_when_same_title_and_content_have_other_uuid(tmp_path):
+    class DuplicatePlatformClient(FakePlatformClient):
+        def select(self, table, *, columns="*", filters=None, limit=None, offset=None):
+            if offset:
+                return []
+            if table == "processes" and "json" in (filters or {}):
+                current = super().select(table, columns=columns, filters=filters, limit=limit)[0]
+                duplicate = deepcopy(current)
+                duplicate["id"] = "process-other"
+                return [current, duplicate]
+            return super().select(table, columns=columns, filters=filters, limit=limit)
+
+    client = DuplicatePlatformClient()
+    store = CaseStore(tmp_path / "cases")
+
+    summary = intake_review(
+        "review-1", root=tmp_path, batch_id="batch-1", case_store=store, client=client
+    )
+
+    case_root = tmp_path / "cases" / summary["case_dir"]
+    check = json.loads((case_root / "snapshots/title-duplicate-check.json").read_text())
+    assert summary["status"] == "paused_duplicate_confirmation"
+    assert check["identical_candidates"] == [{"id": "process-other", "version": "01.01.000"}]
+    assert store.get_case("review-1", batch_id="batch-1").status == "paused_duplicate_confirmation"
+    assert not (case_root / "source-checks/claims.json").exists()
+    assert client.downloads == []
+
+    confirmation = {
+        "decision": "continue",
+        "reviewer": "审核员甲",
+        "confirmed_at": "2026-09-24T10:00:00+08:00",
+        "search_fingerprint": check["search_fingerprint"],
+        "candidate_ids": ["process-other@01.01.000"],
+    }
+    confirmation_path = case_root / "agent-review/title-duplicate-confirmation.json"
+    confirmation_path.parent.mkdir(exist_ok=True)
+    confirmation_path.write_text(json.dumps(confirmation, ensure_ascii=False))
+
+    resumed = intake_review(
+        "review-1", root=tmp_path, batch_id="batch-1", case_store=store, client=client
+    )
+
+    assert resumed["status"] == "intake_completed"
+    assert (case_root / "source-checks/claims.json").exists()
+
+
+def test_failed_repeat_search_invalidates_previous_clearance(tmp_path):
+    store = CaseStore(tmp_path / "cases")
+    summary = intake_review(
+        "review-1", root=tmp_path, batch_id="batch-1", case_store=store,
+        client=FakePlatformClient(),
+    )
+    case_root = tmp_path / "cases" / summary["case_dir"]
+
+    class SearchFailureClient(FakePlatformClient):
+        def select(self, table, *, columns="*", filters=None, limit=None, offset=None):
+            if "json" in (filters or {}):
+                raise RuntimeError("search unavailable")
+            return super().select(table, columns=columns, filters=filters, limit=limit, offset=offset)
+
+    with pytest.raises(RuntimeError, match="search unavailable"):
+        intake_review(
+            "review-1", root=tmp_path, batch_id="batch-1", case_store=store,
+            client=SearchFailureClient(),
+        )
+    with pytest.raises(ValueError, match="题目查重"):
+        require_title_duplicate_clearance(case_root, "process-1", "01.01.000", "process")
+
+
 def test_intake_review_default_batch_id_uses_date_and_account_role(tmp_path):
     store = CaseStore(tmp_path / "cases")
     summary = intake_review(
@@ -154,7 +229,9 @@ class FakeModelPlatformClient:
             }
         ]
 
-    def select(self, table, *, columns="*", filters=None, limit=None):
+    def select(self, table, *, columns="*", filters=None, limit=None, offset=None):
+        if offset:
+            return []
         if table == "lifecyclemodels":
             return [
                 {

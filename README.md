@@ -53,7 +53,7 @@ TIANGONG_MEMBER_PASSWORD=<reviewer-password>
 TIANGONG_ADMIN_EMAIL=<admin-email>
 TIANGONG_ADMIN_PASSWORD=<admin-password>
 TIANGONG_API_ALLOW_WRITES=false
-# Required by skill/document-granular-decompose when using image-aware source parsing.
+# Existing configuration for high-fidelity source parsing; default advanced parse.
 UNSTRUCTURED_API_BASE_URL=https://<unstructured-host>:7770
 UNSTRUCTURED_AUTH_TOKEN=<mineru-api-token>
 ```
@@ -125,8 +125,8 @@ uv run python -m tiangong_audit.cli intake-review \
 ```
 
 注意：`intake-review` 是纯程序命令，不会调用 `skill/document-granular-decompose`。
-对 PDF/Office/图片或复杂表格 source，必须由 Agent 直接使用该 Skill 生成 image-aware
-全文，再用 `source attach-extraction` 回填为当前 case 的正式抽取文本（见下一步）。
+对 PDF/Office/图片或复杂表格 source，由 Agent 直接使用该 Skill 默认 advanced 高保真解析，
+需要独立图片描述时才启用图片增强，再用 `source attach-extraction` 回填文本和完整证据包（见步骤 5）。
 
 产物会落在：
 
@@ -169,7 +169,8 @@ uv run python -m tiangong_audit.cli case coverage \
 snapshots/dataset.raw.json             被审核数据原文
 snapshots/dataset.normalized.json      程序标准化后的审核输入
 precheck/precheck.md                   程序确定性预检
-sources/source-*/extracted.md          source PDF/文本抽取结果
+sources/source-*/extracted.md          source 正式抽取文本（高保真解析保留页/块定位）
+sources/source-*/parsing/              导入的解析证据包与请求/schema 溯源
 sources/source-*/manifest.json         source 状态；related_artifact_requirements 记录需追踪的补充材料
 source-checks/claims.json              从数据集提取的待核验字段；过程数据包含所有输入/输出交换
 source-checks/checks.json              claims 和 source 文本的匹配/冲突/未命中结果
@@ -199,17 +200,26 @@ uv run python -m tiangong_audit.cli agent-findings validate \
 ```
 
 对 PDF/Office/图片或复杂表格 source，先由 Agent 直接调用
-`skill/document-granular-decompose` 生成 image-aware 全文，再回填为正式抽取文本：
+`skill/document-granular-decompose` 默认执行 advanced 高保真解析并保存证据包；需要独立图片描述时才启用图片增强。
+小 source 使用同步，长文档添加 `--async`；图片增强模式与恢复方式见
+[解析合同](skill/document-granular-decompose/references/request-response.md)。以下命令从仓库根目录运行，解析服务变量须已导出：
 
 ```bash
+python3 skill/document-granular-decompose/scripts/mineru_fulltext_extract.py \
+  --file /path/to/source.pdf \
+  --output-dir "cases/active/<review_id>/sources/source-001/parser-output"
+
 uv run python -m tiangong_audit.cli source attach-extraction \
   --review-id "<review_id>" \
   --source-dir source-001 \
-  --extracted-text /path/to/mineru-fulltext.md
+  --extracted-text "cases/active/<review_id>/sources/source-001/parser-output/extracted.md" \
+  --extraction-dir "cases/active/<review_id>/sources/source-001/parser-output"
 ```
 
 回填会保留旧抽取文本为 `extracted.basic.md`，更新 manifest 的
-`extraction_method`，并对新全文重新扫描补充材料引用。若抽取文本超过
+`extraction_method`，并对新全文重新扫描补充材料引用。`--extraction-dir` 同时导入完整证据包到 source 的 `parsing/`，
+在 manifest 中保存解析溯源元数据。审核读取带页码/块索引的 `extracted.md`，并保留原始 JSON、服务全文与请求/schema 记录；
+图片描述属于模型生成内容，不可当作原文逐字引用；`pypdf` 文本不得作为此类 source 的唯一最终证据。若抽取文本超过
 semantic-context 的截断上限，Agent 必须完整读取原文件，并在
 `agent-findings.json` 的 `source_documents_read` 中记录该路径，否则
 semantic-review 会保留"截断未确认"的人工确认项。

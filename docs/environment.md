@@ -24,14 +24,19 @@
 - `TIANGONG_API_ALLOW_WRITES`：默认必须为 `false`。
 - `UNSTRUCTURED_API_BASE_URL`、`UNSTRUCTURED_AUTH_TOKEN`：项目内
   `skill/document-granular-decompose` 的配置，用于对 source PDF、Office、图片和复杂表格材料执行
-  image-aware 全文抽取。
+  高保真解析，默认使用 advanced parse；需要独立图片描述时才启用图片增强。
 - `UNSTRUCTURED_PROVIDER`、`UNSTRUCTURED_MODEL`：可选的 `skill/document-granular-decompose`
-  路由覆盖。
+  独立图片模型路由覆盖；默认 parse 忽略这两个环境变量，解析质量由 CLI 的 tier 选择。
 - 审核管理员和审核员账号权限。
 
-从 `.env.example` 复制出本地 `.env` 后填写配置，客户端会自动读取当前目录中的
-`.env`。账号、token、API key 和 `.env` 不得提交到仓库，也不得粘贴到聊天或案件
+从 `.env.example` 复制出本地 `.env` 后填写配置，审核 Runtime 客户端会自动读取当前目录中的
+`.env`。直接运行解析 Skill 脚本时须把变量导出到进程环境；脚本本身不自动加载 `.env`。账号、token、API key 和 `.env` 不得提交到仓库，也不得粘贴到聊天或案件
 记录。
+
+解析 Skill 保持自包含的 Python 标准库实现，需要 POSIX 文件锁（`fcntl`），不需要安装审核 Runtime 或额外 HTTP 包，也不新增必填环境变量。
+小 source 可同步处理，长文档和图片增强优先异步。部署须提供所选模式对应的 worker；新提交必须能读取实际 OpenAPI，不能用离线快照绕过。
+配置细节见 [解析环境说明](../skill/document-granular-decompose/references/env.md)，API 参数、格式、输出和恢复合同统一见
+[request-response.md](../skill/document-granular-decompose/references/request-response.md)。
 
 每个账号都支持两种认证方式并可同时配置：
 

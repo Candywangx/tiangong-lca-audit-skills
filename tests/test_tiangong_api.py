@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from tiangong_audit.integrations.tiangong_api import (
@@ -537,6 +539,41 @@ def test_dataset_api_resolves_model_before_process():
     assert result["dataset_type"] == "model"
     assert result["data"]["id"] == "model-1"
     assert session.calls[0][1].endswith("/rest/v1/lifecyclemodels")
+
+
+@pytest.mark.parametrize("dataset_type,table,column,wrapper,info", [
+    (DatasetType.PROCESS, "processes", "json", "processDataSet", "processInformation"),
+    (DatasetType.MODEL, "lifecyclemodels", "json_tg", "lifeCycleModelDataSet", "lifeCycleModelInformation"),
+])
+def test_dataset_api_searches_exact_title_in_dataset_json(dataset_type, table, column, wrapper, info):
+    session = FakeSession([{"id": "current", "version": "01.01.000", column: {}}])
+    session.responses.append(([], 200))
+    api = DatasetAPI(make_client(session))
+
+    rows = api.search_title(dataset_type, "zh", "单晶硅棒")
+
+    assert rows[0]["id"] == "current"
+    method, url, kwargs = session.calls[0]
+    assert method == "GET"
+    assert url.endswith(f"/rest/v1/{table}")
+    assert kwargs["params"]["limit"] == 1000
+    assert kwargs["params"]["order"] == "id.asc,version.asc"
+    fragment = json.loads(kwargs["params"][column][3:])
+    assert fragment[wrapper][info]["dataSetInformation"]["name"]["baseName"] == [
+        {"@xml:lang": "zh", "#text": "单晶硅棒"}
+    ]
+
+
+def test_dataset_api_title_search_reads_until_an_empty_page():
+    session = FakeSession([{"id": "current"}, {"id": "other"}])
+    session.responses.append(([{"id": "third"}], 200))
+    session.responses.append(([], 200))
+    api = DatasetAPI(make_client(session))
+
+    rows = api.search_title(DatasetType.PROCESS, "zh", "单晶硅棒")
+
+    assert [row["id"] for row in rows] == ["current", "other", "third"]
+    assert [call[2]["params"]["offset"] for call in session.calls] == [0, 2, 3]
 
 
 def test_dataset_api_reads_source_by_id_and_version():

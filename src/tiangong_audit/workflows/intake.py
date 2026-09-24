@@ -15,6 +15,12 @@ from tiangong_audit.rule_engine import load_skill_guardrails, run_deterministic_
 from tiangong_audit.sources import generate_source_claims
 
 from .source import fetch_sources
+from .title_duplicate import (
+    CHECK_RELATIVE_PATH,
+    CONFIRMATION_RELATIVE_PATH,
+    check_title_duplicates,
+    require_title_duplicate_clearance,
+)
 
 
 def intake_review(
@@ -74,6 +80,42 @@ def intake_review(
     manifest.set_step("fetched", True)
     manifest.artifacts["review_task"] = _case_path_label(snapshots / "review-task.json", root)
     manifest.artifacts["dataset_raw"] = _case_path_label(snapshots / "dataset.raw.json", root)
+
+    duplicate_check_path = case_root / CHECK_RELATIVE_PATH
+    _write_json(duplicate_check_path, {
+        "schema_version": "tiangong-title-duplicate-check-v1",
+        "dataset_id": dataset_id,
+        "version": version,
+        "dataset_type": dataset_type,
+        "status": "search_pending",
+    })
+    manifest.status = "title_search_pending"
+    manifest.set_step("title_duplicate_checked", False)
+    store.write_case(manifest)
+
+    duplicate_check = check_title_duplicates(dataset_row, dataset_type, dataset_api)
+    _write_json(duplicate_check_path, duplicate_check)
+    manifest.artifacts["title_duplicate_check"] = _case_path_label(duplicate_check_path, root)
+    manifest.set_step("title_duplicate_checked", True)
+    if duplicate_check["status"] == "awaiting_human_confirmation" and not (
+        case_root / CONFIRMATION_RELATIVE_PATH
+    ).exists():
+        manifest.status = "paused_duplicate_confirmation"
+        store.write_case(manifest)
+        return {
+            "review_id": review_id,
+            "batch_id": manifest.batch_id,
+            "case_dir": manifest.case_dir,
+            "dataset_id": dataset_id,
+            "version": version,
+            "dataset_type": dataset_type,
+            "status": manifest.status,
+            "identical_candidates": duplicate_check["identical_candidates"],
+            "search_fingerprint": duplicate_check["search_fingerprint"],
+            "artifacts": dict(manifest.artifacts),
+        }
+    require_title_duplicate_clearance(case_root, dataset_id, version, dataset_type)
+    manifest.status = "intake_fetched"
 
     guardrails = load_skill_guardrails(root)
     precheck_summary: dict[str, Any] | None = None
@@ -149,6 +191,7 @@ def intake_review(
         "dataset_id": dataset_id,
         "version": version,
         "dataset_type": dataset_type,
+        "status": manifest.status,
         "claim_count": len(claims),
         "source_count": source_summary.get("source_count", 0),
         "check_count": source_summary.get("check_count", 0),

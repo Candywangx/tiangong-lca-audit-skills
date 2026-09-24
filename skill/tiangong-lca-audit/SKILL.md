@@ -11,8 +11,9 @@ description: "审核天工 LCA 过程或模型数据集，检查必填内容、�
 
 1. **识别任务**：判断用户要做数据审核、报告生成、平台操作还是纠偏。
 2. **检查输入**：读取 `references/input-contract.md`，判断数据集类型和信息是否足以审核。
+   - **审核前题目查重**：按 `references/audit-policy.md` 的查重关卡搜索平台中同题目的过程或模型数据集，核对不同 UUID 的原始内容；关卡未通过时暂停后续审核。
 3. **读取程序预检**：若输入包含 Runtime 生成的 `precheck.json`，先读取并复核；程序预检不是最终结论。
-4. **执行 source 语义核验**：先确认已取得可读的 PDF/全文/附录/source table；对 PDF、Office、图片或复杂表格材料，必须直接使用项目内 `skill/document-granular-decompose` 生成 image-aware 全文，并用 `source attach-extraction` 回填为该 source 的正式抽取文本，不得只依赖 `pypdf` 文本抽取。若 `sources/*/manifest.json` 存在 `related_artifact_requirements`，或主文指向 Supplementary Table、appendix、supporting information、source table、附表、附录、补充材料，必须继续获取并纳入核验，无法取得时记录受影响字段；读取 `source-checks/claims.json`、source 摘录或 PDF 页码证据；必须同时看数据集字段和 source 原文上下文，由 Agent 抽出数量、单位口径、基准流、流身份、地点/年份、边界、分配等可核查事实并判断内容是否一致，把字段级结论写入 `source-checks/checks.json`。完整读取过被截断的抽取文本后，必须在 agent-findings 的 `source_documents_read` 中记录该路径。不得用整段字段值的字符串命中或程序规则作为最终 source 结论；source 不可用不得静默视为通过。
+4. **执行 source 语义核验**：先确认已取得可读的 PDF/全文/附录/source table；对 PDF、Office、图片或复杂表格材料，直接使用项目内 `skill/document-granular-decompose` 默认 advanced 高保真解析，需独立图片描述时才启用图片增强；按 `references/input-contract.md` 回填页/块标注文本和完整证据包，不得只依赖 `pypdf` 文本作为最终证据。若 `sources/*/manifest.json` 存在 `related_artifact_requirements`，或主文指向 Supplementary Table、appendix、supporting information、source table、附表、附录、补充材料，必须继续获取并纳入核验，无法取得时记录受影响字段；读取 `source-checks/claims.json`、source 摘录或 PDF 页码证据；必须同时看数据集字段和 source 原文上下文，由 Agent 抽出数量、单位口径、基准流、流身份、地点/年份、边界、分配等可核查事实并判断内容是否一致，把字段级结论写入 `source-checks/checks.json`。完整读取过被截断的抽取文本后，必须在 agent-findings 的 `source_documents_read` 中记录该路径。不得用整段字段值的字符串命中或程序规则作为最终 source 结论；source 不可用不得静默视为通过。
 5. **建立证据表**：按审核维度记录字段、窗口、source 页码、可见事实和缺失信息。
 6. **执行审核**：
    - 过程数据集读取 `references/process-audit.md` 和 `rules/process.json`。
@@ -20,7 +21,7 @@ description: "审核天工 LCA 过程或模型数据集，检查必填内容、�
    - 两类审核都读取 `references/audit-policy.md` 和 `rules/common.json`。
 7. **形成发现**：每条发现必须能指回具体字段、source 页码或数据；不能验证的判断标为人工确认或信息缺口。对预检输出 `required_rule_ids` 中的每条必审判断型规则，必须在 `agent-review/agent-findings.json` 逐条写下 pass/fail/cannot_judge/not_applicable 结论（pass/fail 必须带证据和 `evidence_refs`），可先用 `agent-findings template` 生成清单，写完用 `agent-findings validate` 校验；缺失或不完整的复核会使 semantic-review 无法形成"通过"结论。
 8. **聚合结论**：按 `references/audit-policy.md` 的结论规则生成通过、不通过、信息不足或需人工确认。
-9. **编写输出**：读取 `references/output-contract.md`；批量审核时逐条生成独立报告，修改建议应简短、具体、适合学习者执行。
+9. **编写输出**：读取 `references/output-contract.md`；批量审核时逐条生成独立报告，按该契约保留平台意见标识、排序并改写为提交者可以直接执行的中文；输出前核对与证据型报告和本地意见草稿的一致性。
 10. **处理后续**：
    - 平台操作读取 `references/platform-operations.md`；审核结论为“通过”时，也只能在人工确认后只保存草稿，包括通过报告和验证审查草稿，不得默认分配、提交或改变任务状态。
    - 结论为“不通过”“信息不足”或“需人工确认”时，只能生成审核报告、平台退回意见和待执行操作清单；不得自动执行管理员驳回、退回修改、提交审核意见或任何会改变任务状态的写操作。只有用户在审核结论之后另行明确要求“执行驳回”“退回这几条”“现在在平台驳回”等同义操作时，才允许进入对应平台写入流程。

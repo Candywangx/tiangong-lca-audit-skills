@@ -70,7 +70,7 @@ Skill 不保存来源材料、开发文档、测试或占位代码。
 - `check-rules`：执行保守的确定性预检（结构性检查 + 数据驱动个案护栏）并输出 JSON 或 Markdown。
 - `audit`：生成标准化数据、预检结果和 Agent 语义审核任务包。
 - `source resolve/fetch/claims`：解析来源引用，下载和抽取 source 文档，生成适合 source 语义核验的字段 claims；过程数据必须包含所有输入/输出交换，而不只包含参考流。程序不做字段级语义核验判断，`checks.json` 由 Agent 或人工写入。
-- `source attach-extraction`：把 Agent 用 `skill/document-granular-decompose` 生成的 image-aware 全文回填为当前 case 的正式抽取文本，保留旧文本、更新 manifest 并重扫补充材料引用。
+- `source attach-extraction`：把解析 Skill 的页/块标注 `extracted.md` 回填为正式抽取文本；`--extraction-dir` 导入完整证据包到 source 的 `parsing/`，保留旧文本、更新 manifest 溯源并重扫补充材料引用。
 - `agent-findings template/validate`：为必审判断型规则生成待复核清单，并按证据契约校验 Agent 写入的复核结论。
 - `intake-review`：以平台 `review_id` 为入口，拉取任务、数据集、source 文档、claims、agent-findings 模板和初步 source-checks。
 - `semantic-review`：读取 Skill references、rules、程序预检、Agent 规则复核、source 核验、source 抽取文本和模型关联过程证据，物化 `semantic-context.json`，生成正式审核 findings 和平台草稿输入。
@@ -111,10 +111,14 @@ Skill 不保存来源材料、开发文档、测试或占位代码。
 1. `resolver` 从原始或标准化 JSON 中识别 source dataset、完整审查报告、数字文件和文本 URL。
 2. `claims` 从数据集提取短字段、年份、名称、地点、技术路线、参考流，以及所有输入/输出交换的名称、数量、单位等待核验项。
 3. `downloader` 将本地、HTTP 或平台 storage source 文件复制到当前 case，记录状态、content type 和 hash。
-4. `extractor` 只提供轻量文本、JSON 和 PDF 文本抽取。PDF/Office/图片或复杂表格 source 的高保真解析复用项目内 `skill/document-granular-decompose`，审核 Agent 必须直接调用该 Skill，并把生成的 image-aware 全文保存为当前 case 的 source 证据。
+4. `extractor` 只提供轻量文本、JSON 和 PDF 文本抽取。PDF/Office/图片或复杂表格 source 的高保真解析复用项目内 `skill/document-granular-decompose`，审核 Agent 直接调用该 Skill，默认 advanced parse；仅在证据需要独立图片描述时启用图片增强。小 source 同步，长文档或图片增强优先异步，`pypdf` 文本不得成为唯一最终证据。
 5. `workflow.source` 扫描抽取文本中的 Supplementary Table、appendix、supporting information、source table、附表、附录、补充材料等中英文引用，并把需继续追踪的材料写入 `SourceArtifact.related_artifact_requirements`；命中扫描上限时追加 `scan_truncated` 记录，不静默截断。
 6. Agent 用 `document-granular-decompose` 生成的高保真全文通过 `source attach-extraction` 回填；Agent 或人工读取 claims、source 原文和补充材料后写入 `source-checks/checks.json`；程序不生成最终 `SourceCheck` 判断。
 7. Agent 对必审判断型规则的复核结论写入 `agent-review/agent-findings.json`，经 `agent-findings validate` 校验后由 semantic-review 聚合为正式 findings。
+
+解析客户端由独立入口与 `mineru_client.py`、`mineru_jobs.py`、`mineru_results.py` 组成，均为自包含的标准库模块；POSIX 文件锁使用 `fcntl`。
+客户端负责 HTTP/schema 校验、持久任务恢复和证据渲染；审核 Runtime 负责导入证据包和 manifest 溯源，语义判断仍由 Agent 完成。
+详细 API/CLI、文件格式和状态合同只维护在 [request-response.md](../skill/document-granular-decompose/references/request-response.md)，不在审核规则中复制。
 
 source 文件和抽取结果属于案件证据，只能保存在 `cases/`，不得进入 Skill。
 

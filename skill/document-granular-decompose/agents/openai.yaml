@@ -1,4 +1,4 @@
 interface:
   display_name: "Document Granular Decompose"
-  short_description: "Parse docs to fulltext via MinerU"
-  default_prompt: "Use $document-granular-decompose to call /mineru_with_images with return_txt=true and return fulltext only from the response."
+  short_description: "Parse documents into traceable evidence bundles"
+  default_prompt: "Use $document-granular-decompose and follow its execution guide and request-response contract to extract this source into an evidence bundle, choosing image enrichment when needed and resuming saved tasks safely."

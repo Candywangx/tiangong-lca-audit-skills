@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import re
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import Any
+from uuid import uuid4
 
 from tiangong_audit.case_store import CaseStore
 from tiangong_audit.contracts import SourceArtifact, SourceRef
@@ -30,6 +33,9 @@ RELATED_ARTIFACT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 MAX_RELATED_ARTIFACT_REQUIREMENTS = 20
+EXTRACTION_BUNDLE_FILES = (
+    "result.json", "extracted.md", "fulltext.txt", "request.json", "openapi.json",
+)
 
 
 def resolve_sources(
@@ -211,12 +217,94 @@ def generate_claims_for_payload(payload: Any) -> dict[str, str]:
     return generate_source_claims(payload)
 
 
+def _safe_attachment_name(value: str, label: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", value):
+        raise ValueError(f"Unsafe {label}: {value!r}")
+    return value
+
+
+def _no_symlinks(path: Path) -> Path:
+    """Reject symlinks in any component, including dangling destination links."""
+    path = path.absolute()
+    if ".." in path.parts or any(part.is_symlink() for part in (path, *path.parents)):
+        raise ValueError(f"Unsafe attachment path: {path}")
+    return path
+
+
+def _read_attachment_file(path: Path) -> bytes:
+    path = _no_symlinks(path)
+    if not path.is_file():
+        raise ValueError(f"Attachment file not found or not a regular file: {path}")
+    return path.read_bytes()
+
+
+def _validated_extraction_bundle(
+    directory: Path, text: bytes, source_sha256: str,
+) -> dict[str, bytes]:
+    """Validate the portable evidence contract without depending on Skill code.
+
+    Rendering belongs to the standalone parser. Here we verify supplied Markdown
+    identity and record its hash, rather than reimplementing that renderer.
+    """
+    directory = _no_symlinks(directory)
+    files = {name: _read_attachment_file(directory / name) for name in EXTRACTION_BUNDLE_FILES}
+    result = json.loads(files["result.json"])
+    if not isinstance(result, dict) or not isinstance(result.get("result"), list):
+        raise ValueError("result.json must contain a business object with a result list")
+    blocks = result["result"]
+    for block in blocks:
+        if (
+            not isinstance(block, dict)
+            or not isinstance(block.get("text"), str)
+            or type(block.get("page_number")) is not int
+            or block["page_number"] <= 0
+            or (block.get("type") is not None and not isinstance(block["type"], str))
+        ):
+            raise ValueError("Invalid result block: expected text, positive integer page_number, optional type")
+    if not any(block["text"].strip() for block in blocks):
+        raise ValueError("result.json must contain a nonempty text block")
+    raw_text = result.get("txt")
+    if raw_text is not None and not isinstance(raw_text, str):
+        raise ValueError("result.json txt must be a string or null")
+    # When service txt is absent/empty, the parser may derive a fallback from
+    # blocks. Hash that artifact without duplicating the parser's rendering code.
+    if raw_text and raw_text.strip() and files["fulltext.txt"] != raw_text.encode("utf-8"):
+        raise ValueError("fulltext.txt does not match result.json txt")
+    if text != files["extracted.md"]:
+        raise ValueError("Supplied extracted text does not match bundle extracted.md")
+
+    request = json.loads(files["request.json"])
+    if not isinstance(request, dict) or request.get("state") != "SUCCESS":
+        raise ValueError("request.json must record state SUCCESS")
+    identity = request.get("identity")
+    if (
+        not isinstance(identity, dict)
+        or not isinstance(identity.get("endpoint"), str)
+        or not identity["endpoint"].strip()
+        or not isinstance(identity.get("sha256"), str)
+        or not re.fullmatch(r"[0-9a-fA-F]{64}", identity["sha256"])
+        or not isinstance(identity.get("fields"), dict)
+        or not isinstance(identity.get("query"), dict)
+    ):
+        raise ValueError("request.json must contain a valid request identity")
+    if source_sha256 and identity["sha256"].lower() != source_sha256.lower():
+        raise ValueError("Bundle input SHA256 does not match the source artifact")
+    for name, key in (("result.json", "result_sha256"), ("openapi.json", "schema_sha256")):
+        if request.get(key) != hashlib.sha256(files[name]).hexdigest():
+            raise ValueError(f"{name} SHA256 does not match request.json {key}")
+    schema = json.loads(files["openapi.json"])
+    if not isinstance(schema, dict) or not isinstance(schema.get("openapi"), str) or not isinstance(schema.get("paths"), dict):
+        raise ValueError("openapi.json must contain an OpenAPI schema")
+    return files
+
+
 def attach_extraction(
     review_id: str,
     *,
     root: Path,
     source_dir_name: str,
     extracted_text: Path,
+    extraction_dir: Path | None = None,
     method: str = "document-granular-decompose",
     case_store: CaseStore | None = None,
     batch_id: str | None = None,
@@ -226,35 +314,94 @@ def attach_extraction(
     This closes the loop the Agent opens when it runs
     ``skill/document-granular-decompose`` manually: the result becomes the
     canonical ``extracted.md``, the source manifest is updated, and the
-    supplementary-material scan is re-run on the richer text.
+    supplementary-material scan is re-run on the richer text. An optional parser
+    bundle is validated before any writes and retained locally with file hashes.
     """
 
     store = case_store or CaseStore(root / "cases")
     manifest = store.get_case(review_id, batch_id=batch_id)
-    source_dir = root / "cases" / manifest.case_dir / "sources" / source_dir_name
+    _safe_attachment_name(source_dir_name, "source directory")
+    _safe_attachment_name(method, "extraction method")
+    source_dir = _no_symlinks(root / "cases" / manifest.case_dir / "sources" / source_dir_name)
+    if not source_dir.is_relative_to((root / "cases").absolute()):
+        raise ValueError("Source directory escapes the cases directory")
     manifest_path = source_dir / "manifest.json"
-    if not manifest_path.exists():
-        raise ValueError(f"Source manifest not found: {manifest_path}")
     extracted_text = Path(extracted_text)
-    if not extracted_text.exists():
-        raise ValueError(f"Extracted text file not found: {extracted_text}")
-
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    original_manifest = _read_attachment_file(manifest_path)
+    payload = json.loads(original_manifest)
     artifact = SourceArtifact.from_dict(payload)
+    text = _read_attachment_file(extracted_text)
+    text.decode("utf-8")  # Fail before backups or writes for invalid text encoding.
+    bundle = (
+        _validated_extraction_bundle(Path(extraction_dir), text, artifact.sha256)
+        if extraction_dir is not None else None
+    )
 
-    target = source_dir / "extracted.md"
+    target = _no_symlinks(source_dir / "extracted.md")
+    parsing = _no_symlinks(source_dir / "parsing")
+    history_root = _no_symlinks(source_dir / "parsing-history")
+    if history_root.exists() and not history_root.is_dir():
+        raise ValueError("Parsing history path must be a directory")
+    if parsing.exists():
+        if not parsing.is_dir():
+            raise ValueError("Parsing path must be a directory")
+        for path in parsing.rglob("*"):
+            _no_symlinks(path)
+    backup = None
     if target.exists():
-        previous_method = str(payload.get("extraction_method") or "basic")
-        backup = source_dir / f"extracted.{previous_method}.md"
+        previous_method = _safe_attachment_name(str(payload.get("extraction_method") or "basic"), "previous extraction method")
         if target.resolve() != extracted_text.resolve():
-            backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
-    text = extracted_text.read_text(encoding="utf-8")
-    target.write_text(text, encoding="utf-8")
+            backup = source_dir / f"extracted.{previous_method}.md"
+            while backup.exists() or backup.is_symlink():
+                backup = source_dir / f"extracted.{previous_method}.{uuid4().hex}.md"
+        previous_text = _read_attachment_file(target)
+
+    # All external evidence and destination paths are checked before changing the
+    # previous text or provenance. Stage exact bytes; never retain external paths.
+    with TemporaryDirectory(prefix=".parsing-", dir=source_dir) as temporary:
+        staged = Path(temporary) / "bundle"
+        if bundle is not None:
+            staged.mkdir()
+            for name, data in bundle.items():
+                (staged / name).write_bytes(data)
+        if parsing.exists():
+            history_root.mkdir(exist_ok=True)
+            history_dir = Path(mkdtemp(prefix="extraction-", dir=history_root))
+            archived = history_dir / "bundle"
+            parsing.rename(archived)
+            (history_dir / "source-manifest.json").write_bytes(original_manifest)
+            history_entry = {
+                "directory": str(archived.relative_to(source_dir)),
+                "manifest_path": str((history_dir / "source-manifest.json").relative_to(source_dir)),
+                "extraction_method": payload.get("extraction_method", ""),
+            }
+            payload.setdefault("extraction_history", []).append(history_entry)
+            manifest.artifacts[f"source_parsing_history:{source_dir_name}:{history_dir.name}"] = _case_path_label(history_dir, root)
+        payload.pop("extraction_bundle", None)
+        for name in EXTRACTION_BUNDLE_FILES:
+            manifest.artifacts.pop(f"source_parsing:{source_dir_name}:{name}", None)
+        if bundle is not None:
+            staged.rename(parsing)
+            payload["extraction_bundle"] = {"files": {
+                name: {"path": f"parsing/{name}", "sha256": hashlib.sha256(data).hexdigest()}
+                for name, data in bundle.items()
+            }}
+            for name in bundle:
+                manifest.artifacts[f"source_parsing:{source_dir_name}:{name}"] = _case_path_label(parsing / name, root)
+        if backup is not None:
+            with backup.open("xb") as output:
+                output.write(previous_text)
+        target.write_bytes(text)
 
     artifact.extracted_text_path = str(target)
     artifact.status = "extracted"
     artifact.error = ""
-    updated_payload = _artifact_manifest_payload(artifact, source_dir)
+    changes = _artifact_manifest_payload(artifact, source_dir)
+    updated_payload = payload
+    # Preserve extension fields, including extensions nested in the source ref.
+    for key in ("extracted_text_path", "status", "error", "related_artifact_requirements"):
+        updated_payload[key] = changes[key]
+    updated_payload.setdefault("schema_version", changes["schema_version"])
     updated_payload["extraction_method"] = method
     manifest_path.write_text(
         json.dumps(updated_payload, ensure_ascii=False, indent=2) + "\n",
@@ -270,7 +417,8 @@ def attach_extraction(
         "source_dir": source_dir_name,
         "extracted_text_path": _case_path_label(target, root),
         "extraction_method": method,
-        "bytes": len(text.encode("utf-8")),
+        "bytes": len(text),
+        **({"extraction_bundle": updated_payload["extraction_bundle"]} if bundle is not None else {}),
         "related_artifact_requirements": updated_payload.get(
             "related_artifact_requirements", []
         ),

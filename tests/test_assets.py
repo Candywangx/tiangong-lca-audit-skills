@@ -54,7 +54,7 @@ def test_approval_report_instructions_require_chinese_scope_and_current_date():
 def test_audit_result_template_has_copy_ready_platform_feedback():
     text = (SKILL / "assets/audit-result-template.md").read_text(encoding="utf-8")
     assert "## 平台退回意见" in text
-    assert "①{位置} 中" in text
+    assert "①【{标识}】{位置}" in text
 
 
 def test_output_contract_defines_copy_ready_platform_feedback():
@@ -89,3 +89,14 @@ def test_projected_api_fixtures_are_valid_json():
     assert len(fixtures) == 3
     for fixture in fixtures:
         assert json.loads(fixture.read_text(encoding="utf-8"))
+
+
+def test_output_contract_requires_visible_severity_and_readable_opinions():
+    text = (SKILL / "references/output-contract.md").read_text(encoding="utf-8")
+    for severity, label in (("blocking", "需修改"), ("input_gap", "需补充"),
+                            ("manual_review", "需确认"), ("advisory", "建议优化")):
+        assert f"`{severity}` | 【{label}】" in text
+    assert "不能根据“补充”“确认”“建议”等动词" in text
+    assert "编号和排序不能代替标识" in text
+    assert "两到三句" in text
+    assert "不得把工具读取失败" in text

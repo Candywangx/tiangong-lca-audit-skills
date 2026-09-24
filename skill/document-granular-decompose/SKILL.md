@@ -1,94 +1,30 @@
 ---
 name: document-granular-decompose
-description: Upload local documents to TianGong AI Unstructure `/mineru_with_images` API for fine-grained parsing and return only plain fulltext content. Use when a task needs document fulltext extraction with `return_txt=true`, strict file-type allowlist validation, API base URL/auth token from environment variables, and optional provider/model overrides.
+description: Use when local PDF, Office, or image sources need high-fidelity extraction, page-level evidence for review, optional image descriptions, or resumable long-document parsing through TianGong AI Unstructure.
 ---
 
 # Document Granular Decompose
 
-## Core Goal
-- Parse a local document through `POST /mineru_with_images`.
-- Always force `return_txt=true`.
-- Read environment variables for endpoint, request identity, and model routing:
-  - `UNSTRUCTURED_API_BASE_URL` (base URL such as `https://your-unstructured-host:7770`, or a full `/mineru_with_images` endpoint)
-  - `UNSTRUCTURED_AUTH_TOKEN`
-  - `UNSTRUCTURED_PROVIDER` (optional)
-  - `UNSTRUCTURED_MODEL` (optional)
-- Return only plain fulltext (prefer API `txt`; fallback to joined `result[].text`).
+## Execution
 
-## Triggering Conditions
-- Need robust document fulltext extraction for PDF/Office/image files.
-- Need image-aware MinerU parsing but only textual output for downstream chunking/search/summarization.
-- Need to standardize provider/model/token input via environment variables instead of ad-hoc command parameters.
+1. Read [environment setup](references/env.md) and export existing service credentials. The Python entry point runs standalone using the standard library on POSIX (file locking uses `fcntl`).
+2. Read the [request and response contract](references/request-response.md) for supported inputs, modes, schema validation, outputs, and recovery. Default to high-fidelity advanced parsing; add image enrichment when the evidence requires independent image descriptions. Use synchronous parsing for small sources and asynchronous tasks for long documents or image enrichment.
+3. Run `scripts/mineru_fulltext_extract.py` from this Skill directory. For audit evidence, save a bundle:
 
-## Workflow
-1. Prepare environment variables.
+   ```bash
+   python3 scripts/mineru_fulltext_extract.py \
+     --file /absolute/path/to/document.pdf \
+     --output-dir /absolute/path/to/case/parser-output
+   ```
 
-```bash
-export UNSTRUCTURED_AUTH_TOKEN="your-fastapi-bearer-token"
-export UNSTRUCTURED_API_BASE_URL="https://your-unstructured-host:7770"
-# Optional routing overrides. Omit them to let the server choose its defaults.
-export UNSTRUCTURED_PROVIDER="vllm"
-export UNSTRUCTURED_MODEL="Qwen/Qwen3.5-122B-A10B-FP8"
-```
+   For long sources, add `--async`. For image enrichment, select a mode using the contract. Before each new submission the client checks the target deployment's live schema.
+4. If waiting stops, follow the contract's recovery procedure and keep the task record. Do not upload again when submission or completion is uncertain.
+5. Read the page/block-labelled `extracted.md` alongside `result.json` and the original source. Verify relevant tables, units, and image-derived claims. For audit attachment, follow the audit Skill's input contract to import the bundle. For plain-text consumers, use the compatibility output described in the API contract.
 
-2. Run extraction and print fulltext to stdout.
+## Resources
 
-```bash
-python3 scripts/mineru_fulltext_extract.py \
-  --file "/absolute/path/to/document.pdf"
-```
-
-3. Save fulltext to a local file when needed.
-
-```bash
-python3 scripts/mineru_fulltext_extract.py \
-  --file "/absolute/path/to/document.pdf" \
-  --output "/absolute/path/to/fulltext.txt"
-```
-
-## Request Contract
-- Endpoint resolution:
-  - `--api-url` if provided
-  - else `UNSTRUCTURED_API_BASE_URL` when it already ends with `/mineru_with_images`
-  - else `UNSTRUCTURED_API_BASE_URL + /mineru_with_images`
-  - else fail fast with missing environment variable error
-- Method: `POST` multipart form.
-- Query params:
-  - Force `return_txt=true` (always set by script).
-- Form fields sent:
-  - `file` (required)
-  - `provider` (optional, from `UNSTRUCTURED_PROVIDER` when set)
-  - `model` (optional, from `UNSTRUCTURED_MODEL` when set)
-- Header sent:
-  - `Authorization: Bearer $UNSTRUCTURED_AUTH_TOKEN`
-
-## Supported File Types (Strict)
-- Supported file types:
-  - `.bmp, .doc, .docm, .docx, .dot, .dotx, .gif, .jp2, .jpeg, .jpg, .odp, .odt, .pdf, .png, .pot, .potx, .pps, .ppsx, .ppt, .pptm, .pptx, .tiff, .webp, .xls, .xlsm, .xlsx, .xlt, .xltx`
-- Office formats:
-  - `.doc, .docm, .docx, .dot, .dotx, .odp, .odt, .pot, .potx, .pps, .ppsx, .ppt, .pptm, .pptx, .xls, .xlsm, .xlsx, .xlt, .xltx`
-- Any other extension is rejected before sending API requests.
-
-## Output Rules
-- Success output must be plain text fulltext only.
-- Fulltext source priority:
-  1. `response.txt`
-  2. join non-empty `response.result[].text` by blank lines
-- Do not output chunk metadata/json unless the user explicitly requests debugging.
-
-## Error Handling
-- Missing required env vars (`UNSTRUCTURED_API_BASE_URL`, `UNSTRUCTURED_AUTH_TOKEN`): fail fast with actionable message.
-- Missing `UNSTRUCTURED_PROVIDER` or `UNSTRUCTURED_MODEL`: omit the form field and let the service choose its default.
-- HTTP 401/403: report token/auth issue.
-- HTTP 4xx/5xx: print status and API error body if available.
-- Missing text in response: fail with explicit schema mismatch error.
-
-## References
-- `references/env.md`
-- `references/request-response.md`
-
-## Assets
-- `assets/config.example.env`
-
-## Scripts
-- `scripts/mineru_fulltext_extract.py`
+- [Request and response contract](references/request-response.md): authoritative API/CLI details, formats, evidence semantics, and recovery.
+- [Environment setup](references/env.md): configuration and credential loading.
+- [Environment example](assets/config.example.env): configuration names.
+- [Extraction entry point](scripts/mineru_fulltext_extract.py): standalone Python client.
+- [HTTP and schema support](scripts/mineru_client.py), [task persistence](scripts/mineru_jobs.py), and [result rendering](scripts/mineru_results.py): keep these standard-library modules beside the entry point when distributing the Skill.

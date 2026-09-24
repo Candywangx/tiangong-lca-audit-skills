@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 from tiangong_audit.cli import (
     agent_findings_template,
     agent_findings_validate,
@@ -1105,3 +1107,24 @@ def test_new_subcommands_are_registered():
         ["eval", "score", "--case-id", "c1", "--result", "r.json"]
     )
     assert args.func is eval_score
+
+
+def test_attach_extraction_cli_forwards_optional_bundle(monkeypatch, tmp_path):
+    received = {}
+
+    def attach(review_id, **kwargs):
+        received.update(kwargs)
+        return {"review_id": review_id}
+
+    monkeypatch.setattr("tiangong_audit.cli.attach_extraction", attach)
+    parser = build_parser()
+    args = parser.parse_args([
+        "source", "attach-extraction", "--review-id", "r", "--source-dir", "source-001",
+        "--extracted-text", str(tmp_path / "extracted.md"), "--extraction-dir", str(tmp_path),
+    ])
+    assert args.func(args) == 0
+    assert received["extraction_dir"] == tmp_path
+    assert received["extracted_text"] == tmp_path / "extracted.md"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["source", "attach-extraction", "--review-id", "r",
+            "--source-dir", "source-001", "--extraction-dir", str(tmp_path)])

@@ -43,7 +43,8 @@ uv run python -m tiangong_audit.cli intake-review \
 ```text
 snapshots/dataset.raw.json        被审数据原文
 precheck/precheck.md              程序确定性预检（不是最终结论）
-sources/source-*/extracted.md     source 文献抽取文本
+sources/source-*/extracted.md     source 文献正式抽取文本
+sources/source-*/parsing/         完整解析证据包与溯源记录
 source-checks/claims.json         待核验字段清单
 agent-review/agent-findings.template.json   必审规则待复核清单
 ```
@@ -56,14 +57,25 @@ Agent），直接说"审核 `<review_id>`"，它会按 SKILL.md 完成下面两�
 **a) 读原文核对** → 写 `source-checks/checks.json`
 
 逐条对照 `claims.json` 和 `sources/*/extracted.md` 原文，每个字段给出
-`matched / conflict / ambiguous / not_found`，带摘录和页码。扫描出的
-PDF/复杂表格先用 `skill/document-granular-decompose` 抽全文，再回填：
+`matched / conflict / ambiguous / not_found`，带摘录和页码。
+PDF、Office、图片和复杂表格先用 `skill/document-granular-decompose` 做默认 advanced 高保真解析，再回填证据包。
+小 source 同步；长文档加 `--async`，需要独立图片描述时选图片增强模式。模式、恢复和配置见
+[解析合同](../skill/document-granular-decompose/references/request-response.md)及其[环境说明](../skill/document-granular-decompose/references/env.md)。
+从仓库根目录运行，解析服务变量须已导出：
 
 ```bash
+python3 skill/document-granular-decompose/scripts/mineru_fulltext_extract.py \
+  --file /path/to/source.pdf \
+  --output-dir "cases/active/<review_id>/sources/source-001/parser-output"
+
 uv run python -m tiangong_audit.cli source attach-extraction \
   --review-id "<review_id>" --source-dir source-001 \
-  --extracted-text <全文文件>
+  --extracted-text "cases/active/<review_id>/sources/source-001/parser-output/extracted.md" \
+  --extraction-dir "cases/active/<review_id>/sources/source-001/parser-output"
 ```
+
+回填将完整包导入 source 的 `parsing/` 并更新 manifest。核验使用页/块标注的 `extracted.md` 和原文；
+图片描述为模型生成内容，不能作为逐字引文，`pypdf` 文本也不能作为这些 source 的唯一最终证据。
 
 **b) 理解规则后判断** → 写 `agent-review/agent-findings.json`
 

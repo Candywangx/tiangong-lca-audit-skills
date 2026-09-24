@@ -197,10 +197,13 @@ uv run python -m tiangong_audit.cli source fetch \
 `source fetch` 在提供 `--account-role` 时也会追踪平台 source dataset。若 external_docs
 文件可通过公开或预签名 URL 读取，也可以用 `--external-doc-base-url` 将相对 URI 转为
 HTTP URL。下载结果、hash、抽取文本和失败状态都保存在当前 case 的 `sources/` 下。
-PDF/Office/图片或复杂表格 source 使用项目内 `skill/document-granular-decompose`；审核 Agent 应直接调用
-该 Skill，使用 `UNSTRUCTURED_API_BASE_URL` 和
-`UNSTRUCTURED_AUTH_TOKEN` 访问 `/mineru_with_images?return_txt=true`，并把生成的全文保存为当前
-case 的 source 证据。
+PDF/Office/图片或复杂表格 source 使用项目内 `skill/document-granular-decompose`，默认 advanced 高保真 parse；
+只有证据需要独立图片描述时才启用图片增强。小 source 同步，长文档和图片增强优先异步。
+使用原有 `UNSTRUCTURED_API_BASE_URL` / `UNSTRUCTURED_AUTH_TOKEN` 配置；具体接口、实时 schema 校验、
+任务恢复和证据输出见 [解析合同](../skill/document-granular-decompose/references/request-response.md)。
+用 `source attach-extraction --extracted-text <DIR/extracted.md> --extraction-dir <DIR>` 回填当前 source
+（同时提供 `--review-id` 和 `--source-dir`）；完整证据包导入 source 的 `parsing/`，manifest 保存解析溯源。
+`pypdf` 仅用于基础抽取，不能成为这些材料的唯一最终证据；图片描述须核对原图，不能作为逐字引文。
 若抽取文本引用 Supplementary Table、appendix、supporting information 或 source table，
 `sources/*/manifest.json` 会记录 `related_artifact_requirements`；正式 source 核验前必须继续
 从平台 source dataset、出版商/DOI 页面或文中 URL 获取相关补充材料，无法取得时记录受影响字段。

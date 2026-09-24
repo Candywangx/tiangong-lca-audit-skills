@@ -38,6 +38,13 @@ cases/
           manifest.json
           original.pdf
           extracted.md
+          parsing/
+            result.json
+            extracted.md
+            fulltext.txt
+            request.json
+            openapi.json
+          parsing-history/         历次替换的解析包与 source manifest 快照
       precheck/
         precheck.json
         precheck.md
@@ -113,9 +120,18 @@ uv run python -m tiangong_audit.cli case update <review-id> \
 `source resolve --review-id` 会标记 `sources_resolved`；`source fetch --review-id`
 默认写入当前 case 的 `sources/` 并在所有 source 文件已下载或抽取后标记
 `sources_downloaded`。PDF/Office/图片或复杂表格 source 应由 Agent 通过项目内
-`skill/document-granular-decompose` 生成 image-aware 全文，再用
-`source attach-extraction` 回填为该 source 的 `extracted.md`（旧文本保留为
-`extracted.<method>.md`）。若抽取文本引用 Supplementary Table、appendix、source
+`skill/document-granular-decompose` 默认执行 advanced 高保真 parse，需独立图片描述时才启用图片增强。
+小 source 同步，长文档和图片增强优先异步。用
+`source attach-extraction --extracted-text <DIR/extracted.md> --extraction-dir <DIR>`
+（加当前 `--review-id` 和 `--source-dir`）回填 source 的 `extracted.md`，旧文本保留为
+`extracted.<method>.md`。完整包导入 source 的 `parsing/`，manifest 记录解析方式、产物和请求/schema 溯源；
+`manifest.json` 的 `extraction_bundle.files` 按文件名记录 `{path: "parsing/<file>", sha256: "..."}`；
+请求、模式和 schema 等详细溯源保留在这些文件中。替换已有解析包时，将旧包及 source manifest 快照
+归档到 `parsing-history/`，并在 `extraction_history` 追加关联记录。导入在覆盖前校验包的完整性、成功状态、
+结果/schema hash 和文本一致性；source 已有 SHA-256 时还须匹配原输入 hash。无效或未完成的包不会覆盖现有证据。
+包内文件含义和任务恢复要求见 [解析合同](../skill/document-granular-decompose/references/request-response.md)。
+保留尚未完成的原输出目录和 `request.json` 以续查同一任务，不因超时删除记录。
+审核使用块渲染文本核对原文，服务 `fulltext.txt` 单独保留；图片描述不是逐字引文，`pypdf` 不得作为唯一最终证据。若抽取文本引用 Supplementary Table、appendix、source
 table、附表、附录或补充材料，`sources/*/manifest.json` 的
 `related_artifact_requirements` 会记录需继续追踪的补充材料。
 `source-checks/checks.json` 由 Agent 或人工阅读 source 原文和数据集字段后写入；
