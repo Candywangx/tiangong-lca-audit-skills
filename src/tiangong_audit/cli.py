@@ -997,32 +997,38 @@ def agent_findings_template(args: argparse.Namespace) -> int:
 def agent_findings_validate(args: argparse.Namespace) -> int:
     """Validate agent-review/agent-findings.json against the evidence contract."""
     dataset_type = args.dataset_type or ""
+    case_root = Path(args.case_root) if getattr(args, "case_root", None) else None
+    expected_review_id = expected_dataset_id = None
     if not args.input and not args.review_id:
         print("ERROR: provide --review-id or --input.", file=sys.stderr)
         return 1
     if args.input:
         path = Path(args.input)
-    else:
+    if args.review_id:
         store = _case_store()
         try:
             manifest = store.get_case(args.review_id, batch_id=args.batch_id)
         except CaseStoreError as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 1
-        path = _agent_findings_path(manifest)
+        if not args.input:
+            path = _agent_findings_path(manifest)
+        case_root = ROOT / "cases" / manifest.case_dir
+        expected_review_id, expected_dataset_id = manifest.review_id, manifest.dataset_id
         dataset_type = dataset_type or manifest.dataset_type
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         print(f"ERROR: Unable to read agent findings: {error}", file=sys.stderr)
         return 1
-    errors = validate_agent_findings(payload, dataset_type=dataset_type)
+    errors = validate_agent_findings(payload, dataset_type=dataset_type, case_root=case_root, expected_review_id=expected_review_id, expected_dataset_id=expected_dataset_id)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         print(f"Agent findings failed contract validation: {len(errors)} error(s).", file=sys.stderr)
         return 1
-    print(f"Agent findings contract check passed: {path}")
+    scope = "case evidence locations verified" if case_root is not None else "structure only; evidence locations not verified"
+    print(f"Agent findings contract check passed ({scope}): {path}")
     return 0
 
 
@@ -1078,7 +1084,9 @@ def eval_score(args: argparse.Namespace) -> int:
         print(f"ERROR: Unable to score result: {error}", file=sys.stderr)
         return 1
     _write_output(args.output, json.dumps(score, ensure_ascii=False, indent=2) + "\n")
-    failed = False
+    failed = bool(score["hard_failures"])
+    for failure in score["hard_failures"]:
+        print(f"FAIL: {failure}", file=sys.stderr)
     if args.require_conclusion_match and not score["conclusion_match"]:
         print(
             f"FAIL: conclusion mismatch: expected {score['expected_conclusion']}, "
@@ -1093,7 +1101,12 @@ def eval_score(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         failed = True
-    return 1 if failed else 0
+    if failed:
+        return 1
+    if score["acceptance_status"] == "needs_manual_review":
+        print("REVIEW: semantic criteria or additional findings need human review.", file=sys.stderr)
+        return 2
+    return 0
 
 
 def review_semantic_review(args: argparse.Namespace) -> int:
@@ -1679,6 +1692,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     agent_validate_parser.add_argument("--review-id", default=None)
     agent_validate_parser.add_argument("--batch-id", default=None)
+    agent_validate_parser.add_argument("--case-root", default=None, help="Case evidence root for --input; without it validation is structure only")
     agent_validate_parser.add_argument(
         "--input",
         default=None,

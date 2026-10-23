@@ -7,7 +7,8 @@
     "Raw API files may contain UUIDs, URLs, process names, and other non-public information. Do not share them externally without review.",
     "Historical audit opinions are treated as historical-case references, not automatic fixed rules.",
     "Expected findings should be matched semantically; model output does not need to copy the exact wording.",
-    "Evaluation fixtures are sanitized; raw API files are intentionally excluded."
+    "Evaluation fixtures are sanitized; raw API files are intentionally excluded.",
+    "Coverage now requires separate evidence, judgment and actionable suggestion criteria. Legacy keyword-only cases and positive claims require semantic review; they cannot auto-pass. expectedSeverity high/medium/low remains historical priority, not the runtime severity enum."
   ],
   "cases": [
     {
@@ -36,7 +37,8 @@
             "1000 kg",
             "加氢裂化(HC)重石脑油"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "hc-heavy-naphtha-not-approved.quantity-basis"
         },
         {
           "topic": "多产品过程建模角色不清",
@@ -48,7 +50,8 @@
             "分配",
             "联合装置"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "hc-heavy-naphtha-not-approved.coproduct-role"
         },
         {
           "topic": "数据集类型与过程边界不匹配",
@@ -58,7 +61,8 @@
             "单元过程，单一操作",
             "单元过程，黑箱"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "hc-heavy-naphtha-not-approved.dataset-type"
         },
         {
           "topic": "部分输出流角色需要核查",
@@ -70,7 +74,8 @@
             "内部循环",
             "外供产品"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "hc-heavy-naphtha-not-approved.output-role"
         },
         {
           "topic": "废水/废气流类型和分类不规范",
@@ -83,7 +88,8 @@
             "废物流",
             "产品流"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "hc-heavy-naphtha-not-approved.waste-emission-type"
         },
         {
           "topic": "辅助物料和公用工程流名称过于泛化",
@@ -93,7 +99,8 @@
             "蒸汽(MPa)",
             "催化剂"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "hc-heavy-naphtha-not-approved.generic-flow-names"
         }
       ],
       "evaluationFocus": [
@@ -107,7 +114,7 @@
       "label": "审核通过样本",
       "inputProjectedFile": "tests/fixtures/projected-api/process-audit-input-approved-projected.json",
       "processName": "自来水生产",
-      "processId": "00000000-0000-0000-0000-000000000002",
+      "processId": "00000000-0000-0000-0000-000000000001",
       "processVersion": "01.01.000",
       "expectedConclusion": "通过",
       "historicalAuditOpinion": [
@@ -157,6 +164,30 @@
         "审核结果应为通过。",
         "不应仅因为若干历史高频空字段缺失就判定不通过。",
         "通过说明应概括对象、边界、清单完整性、来源代表性和单位规范性。"
+      ],
+      "forbiddenIssuePoints": [
+        {
+          "pointId": "optional-field-mechanical-rejection",
+          "judgmentExact": [
+            "非必填字段为空，必须驳回。",
+            "非必填字段必须补齐",
+            "仅因非必填字段为空，数据集不通过。"
+          ],
+          "severities": [
+            "blocking",
+            "advisory"
+          ]
+        },
+        {
+          "pointId": "unreviewed-flow-mechanical-rejection",
+          "judgmentExact": [
+            "流未审核，数据集必须驳回。",
+            "仅因关联流未审核，数据集不通过。"
+          ],
+          "severities": [
+            "blocking"
+          ]
+        }
       ]
     },
     {
@@ -189,7 +220,8 @@
             "废石墨",
             "固体废物"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "lfp-battery-wet-recycling-not-approved.mass-balance"
         },
         {
           "topic": "输出流名称与工艺对象不匹配",
@@ -200,7 +232,8 @@
             "磷酸铁锂电池湿法回收",
             "排放基础流"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "lfp-battery-wet-recycling-not-approved.wrong-product"
         },
         {
           "topic": "粉尘流类型错误",
@@ -212,7 +245,8 @@
             "基础流",
             "排放到大气"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "lfp-battery-wet-recycling-not-approved.dust-type"
         },
         {
           "topic": "过氧化钠输入流缺少参考单位和分类信息",
@@ -224,7 +258,8 @@
             "分类",
             "- ()"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "lfp-battery-wet-recycling-not-approved.peroxide-metadata"
         },
         {
           "topic": "氟化氢排放路径建议核查",
@@ -234,7 +269,8 @@
             "氟化氢",
             "排放到大气，室内"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "lfp-battery-wet-recycling-not-approved.hf-compartment"
         },
         {
           "topic": "英文一般性说明重复",
@@ -244,7 +280,8 @@
             "英文说明",
             "重复"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "lfp-battery-wet-recycling-not-approved.english-repetition"
         }
       ],
       "evaluationFocus": [
@@ -280,7 +317,8 @@
             "上游",
             "背景过程"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "recycled-copper-rod-partly-terminated-not-approved.terminated-boundary"
         },
         {
           "topic": "从摇篮到大门与不含运输冲突",
@@ -291,7 +329,8 @@
             "不含运输",
             "排除活动"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "recycled-copper-rod-partly-terminated-not-approved.transport-boundary"
         },
         {
           "topic": "再生料和废铜输入负担口径不清",
@@ -303,7 +342,8 @@
             "recycled-content",
             "预处理"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "recycled-copper-rod-partly-terminated-not-approved.recycled-burden"
         },
         {
           "topic": "中英文产品形态不一致",
@@ -314,7 +354,8 @@
             "copper wire",
             "copper rod"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "recycled-copper-rod-partly-terminated-not-approved.product-form"
         },
         {
           "topic": "流形态和单位不一致",
@@ -325,7 +366,8 @@
             "体积",
             "m3"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "recycled-copper-rod-partly-terminated-not-approved.oxygen-unit"
         },
         {
           "topic": "水输入和废水排放边界不清",
@@ -336,7 +378,8 @@
             "COD",
             "废水处理边界"
           ],
-          "shouldMentionSuggestion": true
+          "shouldMentionSuggestion": true,
+          "pointId": "recycled-copper-rod-partly-terminated-not-approved.wastewater-boundary"
         }
       ],
       "evaluationFocus": [
@@ -366,43 +409,75 @@
           "topic": "鲍鱼和大黄鱼审核对象错配",
           "ruleId": "process.object.consistency",
           "expectedSeverity": "high",
-          "evidenceKeywords": ["鲍鱼", "大黄鱼", "核心输出"],
-          "shouldMentionSuggestion": true
+          "evidenceKeywords": [
+            "鲍鱼",
+            "大黄鱼",
+            "核心输出"
+          ],
+          "shouldMentionSuggestion": true,
+          "pointId": "abalone-aquaculture-raw-tidas-not-approved.species-mismatch"
         },
         {
           "topic": "基准量与清单输出不一致",
           "ruleId": "process.reference_flow.quantity_unit",
           "expectedSeverity": "high",
-          "evidenceKeywords": ["功能单位", "基准量", "输出交换"],
-          "shouldMentionSuggestion": true
+          "evidenceKeywords": [
+            "功能单位",
+            "基准量",
+            "输出交换"
+          ],
+          "shouldMentionSuggestion": true,
+          "pointId": "abalone-aquaculture-raw-tidas-not-approved.reference-quantity"
         },
         {
           "topic": "交换流版本缺失",
           "ruleId": "process.flow.version_identity",
           "expectedSeverity": "medium",
-          "evidenceKeywords": ["UUID", "version", "流数据集版本"],
-          "shouldMentionSuggestion": true
+          "evidenceKeywords": [
+            "UUID",
+            "version",
+            "流数据集版本"
+          ],
+          "shouldMentionSuggestion": true,
+          "pointId": "abalone-aquaculture-raw-tidas-not-approved.flow-version"
         },
         {
           "topic": "heat/chlorine 等交换无法解析",
           "ruleId": "process.flow.semantic_match",
           "expectedSeverity": "medium",
-          "evidenceKeywords": ["heat", "chlorine", "流类型", "分类"],
-          "shouldMentionSuggestion": true
+          "evidenceKeywords": [
+            "heat",
+            "chlorine",
+            "流类型",
+            "分类"
+          ],
+          "shouldMentionSuggestion": true,
+          "pointId": "abalone-aquaculture-raw-tidas-not-approved.unresolved-exchanges"
         },
         {
           "topic": "外购投入品误用 elementary/resource flow",
           "ruleId": "process.flow.purchased_elementary_input_role",
           "expectedSeverity": "high",
-          "evidenceKeywords": ["oxygen", "calcium carbonate", "elementary", "产品流"],
-          "shouldMentionSuggestion": true
+          "evidenceKeywords": [
+            "oxygen",
+            "calcium carbonate",
+            "elementary",
+            "产品流"
+          ],
+          "shouldMentionSuggestion": true,
+          "pointId": "abalone-aquaculture-raw-tidas-not-approved.purchased-input-type"
         },
         {
           "topic": "cutoff/completeness 占位符",
           "ruleId": "process.boundary.cutoff_placeholder",
           "expectedSeverity": "medium",
-          "evidenceKeywords": ["数据切断和完整性原则", "-", "截断标准"],
-          "shouldMentionSuggestion": true
+          "evidenceKeywords": [
+            "数据切断和完整性原则",
+            "-",
+            "截断标准"
+          ],
+          "shouldMentionSuggestion": true,
+          "pointId": "abalone-aquaculture-raw-tidas-not-approved.cutoff-placeholder"
         }
       ],
       "evaluationFocus": [

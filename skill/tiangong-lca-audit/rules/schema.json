@@ -25,6 +25,8 @@
       "required": [
         "id",
         "dimension",
+        "agent_review_required",
+        "allow_not_applicable",
         "rule_type",
         "severity",
         "condition",
@@ -35,6 +37,8 @@
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z]+(\\.[a-z0-9_]+)+$"},
+        "agent_review_required": {"type": "boolean"},
+        "allow_not_applicable": {"type": "boolean"},
         "dimension": {"type": "string", "minLength": 1},
         "rule_type": {"enum": ["deterministic", "judgment"]},
         "severity": {"enum": ["blocking", "advisory", "manual_review", "input_gap"]},

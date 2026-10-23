@@ -12,6 +12,8 @@
   "rules": [
     {
       "id": "process.core.input_coverage",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "input_coverage",
       "rule_type": "deterministic",
       "severity": "input_gap",
@@ -23,6 +25,8 @@
     },
     {
       "id": "process.object.consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "object",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -34,6 +38,8 @@
     },
     {
       "id": "process.type.boundary_match",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -57,6 +63,8 @@
     },
     {
       "id": "process.type.partly_terminated_evidence",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -80,6 +88,8 @@
     },
     {
       "id": "process.lci.type_compatibility",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "deterministic",
       "severity": "advisory",
@@ -98,6 +108,8 @@
     },
     {
       "id": "process.boundary.lifecycle_stage_contradiction",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "deterministic",
       "severity": "blocking",
@@ -121,6 +133,8 @@
     },
     {
       "id": "process.boundary.cutoff_and_exclusions",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -139,6 +153,8 @@
     },
     {
       "id": "process.boundary.cutoff_placeholder",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -157,6 +173,8 @@
     },
     {
       "id": "process.reference_flow.quantity_unit",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "reference_flow",
       "rule_type": "deterministic",
       "severity": "blocking",
@@ -180,6 +198,8 @@
     },
     {
       "id": "process.reference_flow.annual_supply_unit",
+      "agent_review_required": true,
+      "allow_not_applicable": true,
       "dimension": "reference_flow",
       "rule_type": "deterministic",
       "severity": "advisory",
@@ -198,6 +218,8 @@
     },
     {
       "id": "process.inventory.boundary_consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "deterministic",
       "severity": "blocking",
@@ -216,6 +238,8 @@
     },
     {
       "id": "process.inventory.key_flow_completeness",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -234,6 +258,8 @@
     },
     {
       "id": "process.inventory.quantity_plausibility",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -252,6 +278,8 @@
     },
     {
       "id": "process.recycling.secondary_material_burden",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -275,6 +303,8 @@
     },
     {
       "id": "process.coproduct.role_and_allocation",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -293,6 +323,8 @@
     },
     {
       "id": "process.allocation.method_traceability",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -316,6 +348,8 @@
     },
     {
       "id": "process.flow.semantic_match",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -345,6 +379,8 @@
     },
     {
       "id": "process.flow.purchased_elementary_input_role",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -368,6 +404,8 @@
     },
     {
       "id": "process.flow.version_identity",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "deterministic",
       "severity": "input_gap",
@@ -386,6 +424,8 @@
     },
     {
       "id": "process.flow.form_unit_consistency",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -409,6 +449,8 @@
     },
     {
       "id": "process.inventory.water_balance_boundary",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -427,6 +469,8 @@
     },
     {
       "id": "process.flow.review_status",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "deterministic",
       "severity": "advisory",
@@ -438,6 +482,8 @@
     },
     {
       "id": "process.classification.process_fit",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "advisory",
@@ -461,6 +507,8 @@
     },
     {
       "id": "process.source.traceability",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -484,6 +532,8 @@
     },
     {
       "id": "process.source.document_availability",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "input_gap",
@@ -507,6 +557,8 @@
     },
     {
       "id": "process.source.field_conflict",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -525,6 +577,8 @@
     },
     {
       "id": "process.source.field_not_supported",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -543,6 +597,8 @@
     },
     {
       "id": "process.description.source_content_attribution",
+      "agent_review_required": true,
+      "allow_not_applicable": true,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -561,6 +617,8 @@
     },
     {
       "id": "process.representativeness.consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -579,6 +637,8 @@
     },
     {
       "id": "process.metadata.dqr_completeness",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -597,6 +657,8 @@
     },
     {
       "id": "process.metadata.goal_scope_documentation",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "advisory",
@@ -615,6 +677,8 @@
     },
     {
       "id": "process.metadata.review_report_traceability",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "advisory",
@@ -639,6 +703,8 @@
     },
     {
       "id": "process.management.identity",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "management",
       "rule_type": "deterministic",
       "severity": "input_gap",

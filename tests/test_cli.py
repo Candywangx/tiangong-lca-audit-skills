@@ -1001,6 +1001,9 @@ def test_agent_findings_template_and_validate_roundtrip(monkeypatch, tmp_path, c
             }
         )
     findings_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    source = findings_path.parent.parent / "sources/source-001/extracted.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Page 3\n字段与 source 摘录一致。")
     assert agent_findings_validate(
         Namespace(review_id="review-1", batch_id="batch-1", input=None, dataset_type=None)
     ) == 0
@@ -1128,3 +1131,19 @@ def test_attach_extraction_cli_forwards_optional_bundle(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         parser.parse_args(["source", "attach-extraction", "--review-id", "r",
             "--source-dir", "source-001", "--extraction-dir", str(tmp_path)])
+
+
+def test_agent_validate_input_distinguishes_structure_and_case_evidence(tmp_path, capsys):
+    from tiangong_audit.contracts.agent_review import new_agent_findings_template
+    payload = new_agent_findings_template(review_id='review-1', dataset_id='dataset-1', dataset_type='process')
+    payload['reviewed_by'] = 'agent'
+    for item in payload['rule_reviews']:
+        item.update(verdict='pass', evidence='字段证据', evidence_refs=['missing.json#/field'])
+    path = tmp_path / 'agent.json'
+    path.write_text(json.dumps(payload))
+    args = Namespace(input=str(path), review_id=None, batch_id=None, dataset_type='process', case_root=None)
+    assert agent_findings_validate(args) == 0
+    assert 'structure only' in capsys.readouterr().out.lower()
+    args.case_root = str(tmp_path)
+    assert agent_findings_validate(args) == 1
+    assert 'missing' in capsys.readouterr().err

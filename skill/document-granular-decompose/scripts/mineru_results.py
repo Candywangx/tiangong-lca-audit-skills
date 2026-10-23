@@ -66,10 +66,14 @@ def validate_result(payload: object) -> dict:
 def fulltext(payload: dict) -> str:
     txt = payload.get("txt")
     if isinstance(txt, str) and txt.strip():
-        return txt
-    return "\n\n".join(
-        block["text"] for block in payload["result"] if block["text"].strip()
-    )
+        text = txt
+    else:
+        text = "\n\n".join(
+            block["text"] for block in payload["result"] if block["text"].strip()
+        )
+    # MinerU escapes underscores for Markdown. Plain-text consumers need the
+    # original underscore; result.json and extracted.md retain the raw response.
+    return text.replace("\\_", "_")
 
 
 def evidence_markdown(payload: dict) -> str:

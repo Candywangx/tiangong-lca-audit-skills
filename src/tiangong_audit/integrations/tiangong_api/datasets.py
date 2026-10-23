@@ -61,7 +61,7 @@ class DatasetAPI:
             raise ValueError("Title search requires a language and nonblank title")
         is_process = dataset_type == DatasetType.PROCESS
         table = "processes" if is_process else "lifecyclemodels"
-        column = "json" if is_process else "json_tg"
+        columns = ("json",) if is_process else ("json_tg", "json")
         wrapper = "processDataSet" if is_process else "lifeCycleModelDataSet"
         info = "processInformation" if is_process else "lifeCycleModelInformation"
         fragment = {
@@ -73,23 +73,28 @@ class DatasetAPI:
                 }
             }
         }
-        rows: list[dict[str, Any]] = []
-        while True:
-            page = self.client.select(
-                table,
-                columns=PROCESS_COLUMNS if is_process else MODEL_COLUMNS,
-                filters={
-                    column: "cs." + json.dumps(fragment, ensure_ascii=False, separators=(",", ":")),
-                    "order": "id.asc,version.asc",
-                },
-                limit=1000,
-                offset=len(rows),
-            )
-            if not page:
-                return rows
-            rows.extend(page)
-            if len(rows) >= 1000:
-                raise TiangongAPIError("Title search returned at least 1000 rows; cannot verify completeness")
+        matches: dict[tuple[str, str], dict[str, Any]] = {}
+        for column in columns:
+            offset = 0
+            while True:
+                page = self.client.select(
+                    table,
+                    columns=PROCESS_COLUMNS if is_process else MODEL_COLUMNS,
+                    filters={
+                        column: "cs." + json.dumps(fragment, ensure_ascii=False, separators=(",", ":")),
+                        "order": "id.asc,version.asc",
+                    },
+                    limit=1000,
+                    offset=offset,
+                )
+                if not page:
+                    break
+                offset += len(page)
+                for row in page:
+                    matches[(str(row.get("id") or ""), str(row.get("version") or ""))] = row
+                if offset >= 1000 or len(matches) >= 1000:
+                    raise TiangongAPIError("Title search returned at least 1000 rows; cannot verify completeness")
+        return list(matches.values())
 
     def get_source(self, source_id: str, version: str = "") -> dict[str, Any]:
         filters = {"id": f"eq.{source_id}"}

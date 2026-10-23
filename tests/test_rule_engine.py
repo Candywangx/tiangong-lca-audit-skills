@@ -191,6 +191,20 @@ def test_markdown_report_explains_runtime_scope():
     assert "仍需 Agent 或人工审核" in markdown
 
 
+def test_long_precheck_keeps_all_findings_without_creating_oversize_platform_opinion():
+    result = check("process-audit-input-noapproved-projected.json")
+    sample = next(item for item in result["findings"] if item["severity"] == "blocking")
+    result["findings"] = [
+        {**sample, "location": f"交换 {index}"} for index in range(20)
+    ]
+
+    markdown = render_findings(result)
+
+    assert "交换 19" in markdown
+    assert "## 平台意见草稿状态" in markdown
+    assert "## 平台退回意见" not in markdown
+
+
 def test_program_findings_use_registered_rule_ids():
     dataset = synthetic_process_dataset(
         general_zh="本数据集使用外购氧气作为投入品。",

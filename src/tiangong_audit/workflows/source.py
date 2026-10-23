@@ -268,7 +268,7 @@ def _validated_extraction_bundle(
         raise ValueError("result.json txt must be a string or null")
     # When service txt is absent/empty, the parser may derive a fallback from
     # blocks. Hash that artifact without duplicating the parser's rendering code.
-    if raw_text and raw_text.strip() and files["fulltext.txt"] != raw_text.encode("utf-8"):
+    if raw_text and raw_text.strip() and files["fulltext.txt"] != raw_text.replace("\\_", "_").encode("utf-8"):
         raise ValueError("fulltext.txt does not match result.json txt")
     if text != files["extracted.md"]:
         raise ValueError("Supplied extracted text does not match bundle extracted.md")

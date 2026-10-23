@@ -548,6 +548,8 @@ def test_dataset_api_resolves_model_before_process():
 def test_dataset_api_searches_exact_title_in_dataset_json(dataset_type, table, column, wrapper, info):
     session = FakeSession([{"id": "current", "version": "01.01.000", column: {}}])
     session.responses.append(([], 200))
+    if dataset_type == DatasetType.MODEL:
+        session.responses.append(([], 200))
     api = DatasetAPI(make_client(session))
 
     rows = api.search_title(dataset_type, "zh", "单晶硅棒")
@@ -574,6 +576,17 @@ def test_dataset_api_title_search_reads_until_an_empty_page():
 
     assert [row["id"] for row in rows] == ["current", "other", "third"]
     assert [call[2]["params"]["offset"] for call in session.calls] == [0, 2, 3]
+
+
+def test_model_title_search_includes_json_metadata_column():
+    session = QueuedFakeSession(([], 200), ([{"id": "model-1", "version": "01.00.000"}], 200), ([], 200))
+    api = DatasetAPI(make_client(session))
+
+    rows = api.search_title(DatasetType.MODEL, "zh", "水泥生命周期模型")
+
+    assert [row["id"] for row in rows] == ["model-1"]
+    assert "json_tg" in session.calls[0][2]["params"]
+    assert "json" in session.calls[1][2]["params"]
 
 
 def test_dataset_api_reads_source_by_id_and_version():

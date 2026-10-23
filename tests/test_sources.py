@@ -504,6 +504,21 @@ def test_attach_imports_five_local_artifacts_with_hashes(extraction_case):
     assert payload["related_artifact_requirements"][0]["reference"] == "Supplementary Table S8"
 
 
+def test_attach_accepts_parser_plain_text_with_normalized_markdown_underscores(extraction_case):
+    source, bundle, kwargs = extraction_case
+    result = json.loads((bundle / "result.json").read_text())
+    result["txt"] = r"flow\_name"
+    (bundle / "result.json").write_text(json.dumps(result))
+    (bundle / "fulltext.txt").write_text("flow_name")
+    request = json.loads((bundle / "request.json").read_text())
+    request["result_sha256"] = hashlib.sha256((bundle / "result.json").read_bytes()).hexdigest()
+    (bundle / "request.json").write_text(json.dumps(request))
+
+    attach_extraction(**kwargs)
+
+    assert (source / "parsing/fulltext.txt").read_text() == "flow_name"
+
+
 @pytest.mark.parametrize("already_imported", [False, True])
 @pytest.mark.parametrize("damage", [
     "result-hash", "schema-hash", "text-mismatch", "source-hash", "state", "identity",
@@ -651,3 +666,16 @@ def test_attach_accepts_optional_result_fields_and_unknown_source_hash(extractio
     (source / "manifest.json").write_text(json.dumps(payload))
     attach_extraction(**kwargs)
     assert (source / "parsing/result.json").read_bytes() == (bundle / "result.json").read_bytes()
+
+
+def test_source_check_evidence_refs_contract_and_schema():
+    from pathlib import Path
+    from tiangong_audit.contracts.source import SourceCheck
+    from tiangong_audit.contracts.source_check import SOURCE_CHECK_STATUSES
+    source_check = SourceCheck(field='process.name.zh', dataset_value='产品', source_ref_id='source-1', status='matched')
+    assert source_check.to_dict()['evidence_refs'] == []
+    source_check.evidence_refs = ['sources/source-001/result.json#/result/0']
+    assert source_check.to_dict()['evidence_refs'] == source_check.evidence_refs
+    schema = json.loads((Path(__file__).resolve().parents[1] / 'src/tiangong_audit/contracts/schemas/source-check.schema.json').read_text())
+    assert set(schema['properties']['status']['enum']) == SOURCE_CHECK_STATUSES
+    assert schema['properties']['evidence_refs']['items']['type'] == 'string'

@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections import Counter
 import re
 from typing import Any
+from pathlib import Path
 
-from tiangong_audit.contracts.agent_review import REQUIRED_AGENT_REVIEW_RULE_IDS
+from tiangong_audit.contracts.agent_review import REQUIRED_AGENT_REVIEW_RULE_IDS, required_rule_ids
 
 CORE_PROCESS_SECTIONS = ("过程信息", "建模信息", "输入/输出")
-# Judgment rules the Agent must explicitly review; the canonical definition
-# lives in contracts.agent_review so precheck and semantic-review stay aligned.
+# Compatibility snapshot only; production precheck resolves the catalog per call.
 REQUIRED_SEMANTIC_REVIEW_RULE_IDS = REQUIRED_AGENT_REVIEW_RULE_IDS["process"]
 RUNTIME_RULE_BINDINGS = {
     "_check_coverage": ("process.core.input_coverage",),
@@ -617,6 +617,7 @@ def run_deterministic_checks(
     dataset: dict[str, Any],
     *,
     guardrails: dict[str, Any] | None = None,
+    rules_dir: Path | None = None,
 ) -> dict[str, Any]:
     if dataset.get("dataset_type") != "process":
         raise ValueError("The first runtime version only supports normalized process datasets.")
@@ -649,7 +650,7 @@ def run_deterministic_checks(
         "conclusion": _conclusion(findings),
         "findings": findings,
         "semantic_review": {
-            "required_rule_ids": list(REQUIRED_SEMANTIC_REVIEW_RULE_IDS),
+            "required_rule_ids": list(required_rule_ids(dataset["dataset_type"], rules_dir=rules_dir)),
             "note": "这些判断型或跨窗口规则必须由 Agent 结合标准化数据、程序预检和 Skill 参照文件复核；程序预检未命中不代表通过。",
         },
         "summary": {

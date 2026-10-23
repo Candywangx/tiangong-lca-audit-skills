@@ -1,0 +1,139 @@
+{
+  "date": "2026-10-23",
+  "model": "gpt-6.1-sol",
+  "reasoning_effort": "medium",
+  "evidence_packet": "tests/fixtures/audit-reliability/agent-evidence.md",
+  "record_type": "observed_output_summary",
+  "runs": [
+    {
+      "scenario": "A",
+      "run": 1,
+      "conclusion": "通过",
+      "source_conclusion": "一致",
+      "rule_conclusion": "符合规则",
+      "findings": [],
+      "platform_opinion": "无",
+      "platform_write_calls": 0,
+      "assessment": "满足预期；未机械拒绝非必填空值、未审核流或唯一基准流100%分配。引用S1 Page 1与Page 2表1。"
+    },
+    {
+      "scenario": "A",
+      "run": 2,
+      "conclusion": "通过",
+      "source_conclusion": "一致",
+      "rule_conclusion": "符合规则",
+      "findings": [],
+      "platform_opinion": "无",
+      "platform_write_calls": 0,
+      "assessment": "满足预期；S1第2页表1三项交换逐项比对。补做本地分类检索确认1>16>162及更深相同名称候选，不改变结论。"
+    },
+    {
+      "scenario": "B",
+      "run": 1,
+      "conclusion": "信息不足",
+      "source_conclusion": "证据不足",
+      "rule_conclusion": "规则证据不足",
+      "findings": [
+        {
+          "severity": "input_gap",
+          "location": "模型B n2及n2→n1连接"
+        },
+        {
+          "severity": "input_gap",
+          "location": "S2 Page 1引用的Supplementary Table S1"
+        }
+      ],
+      "platform_opinion": "无",
+      "platform_write_calls": 0,
+      "assessment": "满足预期；缺连接不被认定为已证实断路，补表权限失败不转嫁为提交者补交义务。"
+    },
+    {
+      "scenario": "B",
+      "run": 2,
+      "conclusion": "信息不足",
+      "source_conclusion": "证据不足",
+      "rule_conclusion": "规则证据不足",
+      "findings": [
+        {
+          "severity": "input_gap",
+          "location": "输送实例n2和n2→n1连接"
+        },
+        {
+          "severity": "input_gap",
+          "location": "S2 Page 1 Supplementary Table S1"
+        }
+      ],
+      "platform_opinion": "无",
+      "platform_write_calls": 0,
+      "assessment": "满足预期；要求审核端恢复权限取得证据，未指责提交者或编造断路。"
+    },
+    {
+      "scenario": "C",
+      "run": 1,
+      "dataset_results": [
+        {
+          "dataset": "A",
+          "conclusion": "通过",
+          "source_conclusion": "一致",
+          "rule_conclusion": "符合规则",
+          "findings": [],
+          "platform_opinion": "无"
+        },
+        {
+          "dataset": "C",
+          "conclusion": "不通过",
+          "source_conclusion": "不一致",
+          "rule_conclusion": "不符合规则",
+          "findings": [
+            {
+              "severity": "blocking",
+              "location": "输入/输出→输出→计量后的工业盐→数量",
+              "dataset_value": 1000,
+              "source_value": 1,
+              "unit": "kg",
+              "source_location": "S1 Page 2 表1",
+              "suggestion": "将该输出数量由1000 kg改为1 kg；同根问题只记录一条。"
+            }
+          ],
+          "platform_opinion": "①【需修改】“输入/输出→输出→计量后的工业盐→数量”现为1000 kg，而本数据集明确采用的《工业盐密闭计量实验记录S1》Page 2表1中产出为1.000 kg；当前功能单位和工业盐投入也均为1 kg。双方单位均为kg，没有倍率调整，输出录入值为来源值的1000倍。请将该输出数量由1000 kg改为1 kg，与来源和功能单位保持一致。"
+        }
+      ],
+      "platform_write_calls": 0,
+      "assessment": "满足预期；两个独立报告，字段、原值、kg单位、来源页表和修正方向完整；未制造重复问题。"
+    },
+    {
+      "scenario": "C",
+      "run": 2,
+      "dataset_results": [
+        {
+          "dataset": "A",
+          "conclusion": "通过",
+          "source_conclusion": "一致",
+          "rule_conclusion": "符合规则",
+          "findings": [],
+          "platform_opinion": "无"
+        },
+        {
+          "dataset": "C",
+          "conclusion": "不通过",
+          "source_conclusion": "不一致",
+          "rule_conclusion": "不符合规则",
+          "findings": [
+            {
+              "severity": "blocking",
+              "location": "输入/输出→输出→计量后的工业盐→数量",
+              "dataset_value": 1000,
+              "source_value": 1,
+              "unit": "kg",
+              "source_location": "S1 Page 2 表1",
+              "suggestion": "输出数量由1000 kg改为1 kg。"
+            }
+          ],
+          "platform_opinion": "①【需修改】“输入/输出→输出→计量后的工业盐→数量”填写为1000 kg，而采用的《工业盐密闭计量实验记录S1》第2页表1记录产出1.000 kg，两者均为kg，录入量为来源的1000倍；当前功能单位和盐投入也均为1 kg。请将该输出数量改为1 kg，使其与来源、功能单位和投入一致。"
+        }
+      ],
+      "platform_write_calls": 0,
+      "assessment": "满足预期；结论/严重程度稳定，来源差异与基准冲突合并为一个根因。"
+    }
+  ]
+}

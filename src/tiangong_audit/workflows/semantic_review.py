@@ -9,11 +9,13 @@ from typing import Any
 from tiangong_audit.case_store import CaseStore
 from tiangong_audit.contracts.agent_review import (
     required_rule_ids,
-    uncovered_required_rule_ids,
-    validate_agent_findings,
+    admit_agent_findings,
 )
+from tiangong_audit.contracts.evidence_ref import EvidenceReferenceError, resolve_evidence_ref
+from tiangong_audit.contracts.source_check import source_check_errors
 from tiangong_audit.report.markdown import render_platform_return_opinion
 from .title_duplicate import require_title_duplicate_clearance
+from .model_review import dataset_snapshot_sha256, process_snapshot_identity, review_model
 
 
 SEMANTIC_REVIEW_SCHEMA_VERSION = "tiangong-audit-semantic-review-v1"
@@ -82,6 +84,7 @@ def semantic_review(
     root: Path,
     batch_id: str | None = None,
     case_store: CaseStore | None = None,
+    rules_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Synthesize a full audit report from Skill references, precheck, and source checks."""
 
@@ -104,7 +107,11 @@ def semantic_review(
         dataset_type=dataset_type,
     )
     precheck = context["precheck"]
-    source_checks = context["source_checks"]
+    source_checks, source_admission_findings = _admit_source_checks(
+        context["source_checks"], case_root=case_root,
+        claims=context["claims"] if isinstance(context["claims"], dict) else {},
+        source_documents=context["source_documents"],
+    )
     source_artifacts = context["source_artifacts"]
     source_documents = context["source_documents"]
     claims = context["claims"] if isinstance(context["claims"], dict) else {}
@@ -115,16 +122,19 @@ def semantic_review(
         agent_review,
         agent_review_present=context["agent_review_present"],
         dataset_type=dataset_type,
+        rules_dir=rules_dir, case_root=case_root,
+        expected_review_id=manifest.review_id, expected_dataset_id=manifest.dataset_id,
     )
     findings = [
         _normalize_precheck_finding(item, index=index)
         for index, item in enumerate(precheck.get("findings", []))
         if isinstance(item, dict)
     ]
+    findings.extend(source_admission_findings)
     findings.extend(agent_findings)
     source_findings = _source_findings(
         source_checks, source_artifacts, source_documents,
-        reviewed_findings=agent_findings if agent_review_summary["valid"] else [],
+        reviewed_findings=agent_findings,
     )
     findings.extend(source_findings)
     findings.extend(
@@ -132,11 +142,15 @@ def semantic_review(
             claims=claims,
             source_checks=source_checks,
             source_documents=source_documents,
-            agent_review=agent_review,
+            agent_review=agent_review if isinstance(agent_review, dict) else {},
         )
     )
     findings.extend(_input_gap_findings(case_root, precheck, source_checks, dataset_type))
     findings.extend(_semantic_context_findings(context))
+    model_review_summary = None
+    if dataset_type == "model":
+        model_findings, model_review_summary = review_model(context, case_root=case_root)
+        findings.extend(model_findings)
     for finding in findings:
         if finding.get("source") in {
             "semantic-review", "semantic-context", "sources/*/manifest.json",
@@ -156,7 +170,17 @@ def semantic_review(
     audit_completeness = _audit_completeness(
         agent_review_summary=agent_review_summary,
         source_checks=source_checks,
+        source_checks_valid=not source_admission_findings,
     )
+    if model_review_summary is not None:
+        if (agent_review_summary.get("verdict_counts", {}).get("cannot_judge")
+                or source_consistency.get("conclusion") in {"未核验", "证据不足", "需人工确认", "未完全证实"}
+                or any(item.get("rule_id") in {"source.core_claim.unverified", "source.document.truncated_context"} for item in findings)):
+            model_review_summary["complete"] = False
+        audit_completeness["model"] = model_review_summary
+        if not model_review_summary["complete"]:
+            audit_completeness["complete"] = False
+            audit_completeness["missing"].append("model_full_review_incomplete")
     conclusion = _reconcile_conclusion(
         _conclusion(summary),
         source_consistency=source_consistency,
@@ -175,7 +199,8 @@ def semantic_review(
         "version": manifest.version,
         "dataset_type": dataset_type or "unknown",
         "dataset": dataset,
-        "audit_scope": "full-lca-semantic-review",
+        "audit_scope": model_review_summary["audit_scope"] if model_review_summary else "full-lca-semantic-review",
+        "dataset_snapshot_sha256": dataset_snapshot_sha256(context["dataset_raw"]),
         "input_sufficiency": _input_sufficiency(summary),
         "conclusion": conclusion,
         "platform_conclusion": platform_conclusion,
@@ -364,8 +389,8 @@ def build_semantic_context(
         "source_checks": source_checks,
         "source_artifacts": source_artifacts,
         "source_documents": source_documents,
-        "agent_review": agent_review if isinstance(agent_review, dict) else {},
-        "agent_review_present": isinstance(agent_review, dict),
+        "agent_review": agent_review,
+        "agent_review_present": agent_review_path.exists(),
         "platform_opinions": platform_opinions,
         "model_evidence": _read_model_evidence(case_root),
         "references": _read_reference_bundle(root, dataset_type),
@@ -442,14 +467,18 @@ def _normalize_precheck_finding(item: dict[str, Any], *, index: int = 0) -> dict
 
 
 def _agent_review_findings(
-    agent_review: dict[str, Any],
+    agent_review: Any,
     *,
     agent_review_present: bool,
     dataset_type: str,
+    rules_dir: Path | None = None,
+    case_root: Path | None = None,
+    expected_review_id: str | None = None,
+    expected_dataset_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Turn the Agent's rule reviews into first-class findings plus a summary."""
 
-    required = list(required_rule_ids(dataset_type))
+    required = list(required_rule_ids(dataset_type, rules_dir=rules_dir))
     if not agent_review_present:
         summary = {
             "present": False,
@@ -478,11 +507,11 @@ def _agent_review_findings(
         }
         return [finding], summary
 
-    errors = validate_agent_findings(agent_review, dataset_type=dataset_type)
-    missing = uncovered_required_rule_ids(agent_review, dataset_type=dataset_type)
-    rule_reviews = [
-        item for item in agent_review.get("rule_reviews") or [] if isinstance(item, dict)
-    ]
+    admission = admit_agent_findings(agent_review, dataset_type=dataset_type, rules_dir=rules_dir, case_root=case_root, expected_review_id=expected_review_id, expected_dataset_id=expected_dataset_id)
+    errors = admission.errors
+    agent_review = agent_review if isinstance(agent_review, dict) else {}
+    missing = admission.missing_required_rule_ids
+    rule_reviews = [agent_review["rule_reviews"][i] for i in admission.accepted_rule_review_indexes]
     verdict_counts = dict(
         Counter(str(item.get("verdict") or "") for item in rule_reviews)
     )
@@ -495,6 +524,10 @@ def _agent_review_findings(
         "required_total": len(required),
         "required_covered": len(required) - len(missing),
         "validation_error_count": len(errors),
+        "validation_errors": errors,
+        "file_errors": admission.file_errors,
+        "rule_review_errors": admission.rule_review_errors,
+        "additional_finding_errors": admission.additional_finding_errors,
     }
 
     findings: list[dict[str, Any]] = []
@@ -528,9 +561,8 @@ def _agent_review_findings(
             }
         )
 
-    for index, item in enumerate(agent_review.get("rule_reviews") or []):
-        if not isinstance(item, dict):
-            continue
+    for index in admission.accepted_rule_review_indexes:
+        item = agent_review["rule_reviews"][index]
         verdict = str(item.get("verdict") or "")
         rule_id = str(item.get("rule_id") or "")
         refs = "; ".join(str(ref) for ref in item.get("evidence_refs") or [])
@@ -575,9 +607,8 @@ def _agent_review_findings(
                 }
             )
 
-    for index, item in enumerate(agent_review.get("additional_findings") or []):
-        if not isinstance(item, dict):
-            continue
+    for index in admission.accepted_additional_finding_indexes:
+        item = agent_review["additional_findings"][index]
         severity = _severity(item.get("severity"))
         findings.append(
             {
@@ -663,8 +694,10 @@ def _source_quality_findings(
                 }
             )
 
+    read_paths_raw = agent_review.get("source_documents_read")
     read_paths = [
-        str(item) for item in (agent_review.get("source_documents_read") or []) if str(item)
+        item for item in (read_paths_raw if isinstance(read_paths_raw, list) else [])
+        if isinstance(item, str) and item
     ]
     for document in source_documents:
         if not document.get("truncated"):
@@ -697,20 +730,19 @@ def _source_quality_findings(
 
 
 def _path_acknowledged(doc_path: str, read_paths: list[str]) -> bool:
-    normalized = doc_path.strip("/")
-    for read_path in read_paths:
-        candidate = read_path.strip("/")
-        if not candidate:
-            continue
-        if normalized == candidate or normalized.endswith(candidate) or candidate.endswith(normalized):
-            return True
-    return False
+    # Case-relative paths must match the complete path, not a basename/suffix.
+    target = Path(doc_path)
+    return any(isinstance(path, str) and not Path(path).is_absolute()
+               and ".." not in Path(path).parts and Path(path) == target
+               for path in read_paths)
+
 
 
 def _audit_completeness(
     *,
     agent_review_summary: dict[str, Any],
     source_checks: list[dict[str, Any]],
+    source_checks_valid: bool = True,
 ) -> dict[str, Any]:
     agent_ok = bool(agent_review_summary.get("valid"))
     source_checks_present = bool(source_checks)
@@ -721,8 +753,11 @@ def _audit_completeness(
         missing.append("agent_review_invalid_or_incomplete")
     if not source_checks_present:
         missing.append("source_checks_missing")
+    if not source_checks_valid:
+        missing.append("source_checks_invalid")
     return {
-        "complete": agent_ok and source_checks_present,
+        "complete": agent_ok and source_checks_present and source_checks_valid,
+        "source_checks_valid": source_checks_valid,
         "agent_review_valid": agent_ok,
         "source_checks_present": source_checks_present,
         "missing": missing,
@@ -750,6 +785,31 @@ def _reconcile_conclusion(
     if not audit_completeness.get("complete"):
         candidates.append("需人工确认")
     return max(candidates, key=lambda item: _CONCLUSION_RANK.get(item, 1))
+
+
+def _admit_source_checks(checks: list[Any], *, case_root: Path, claims: dict[str, Any], source_documents: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Admit only checks bound to known claims and locatable case sources.
+
+    Keep original indexes so accepted records retain their evidence pointers.
+    Invalid records stay in semantic-context and diagnostics, never as conflicts.
+    """
+    accepted = []
+    diagnostics = []
+    for index, check in enumerate(checks):
+        errors = source_check_errors(check, case_root=case_root, claims=claims, documents=source_documents)
+        if errors:
+            diagnostics.append({
+                "rule_id": "semantic.source_checks.invalid", "severity": "input_gap",
+                "location": f"source-checks/checks.json#/{index}",
+                "evidence": "; ".join(errors),
+                "judgment": "该核验记录不满足证据契约，不能纳入正式来源冲突结论。",
+                "impact": _impact("input_gap"),
+                "suggestion": "补充可复核的来源标识和原文证据后重新核验。",
+                "source": "semantic-review", "platform_actionable": False,
+            })
+        else:
+            accepted.append({**check, "_original_index": index})
+    return accepted, diagnostics
 
 
 def _source_findings(
@@ -795,7 +855,7 @@ def _source_findings(
                         f"source-checks/checks.json:{field}; "
                         f"{source_doc.get('path') or 'sources/*/extracted.md'}"
                     ),
-                    "finding_ref": {"path": "source-checks/checks.json", "pointer": f"/{index}"},
+                    "finding_ref": {"path": "source-checks/checks.json", "pointer": f"/{check.get('_original_index', index)}"},
                     **({"reviewed_finding_ref": check["extra"]["reviewed_finding_ref"]}
                        if (check.get("extra") or {}).get("reviewed_finding_ref") else {}),
                 }
@@ -940,7 +1000,7 @@ def _semantic_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
     if dataset_type == "process":
         findings.extend(_process_context_findings(context))
     elif dataset_type == "model":
-        findings.extend(_model_context_findings(context))
+        pass  # Model evidence is checked with the current case root by review_model.
     else:
         findings.append(
             {
@@ -974,56 +1034,6 @@ def _process_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
                 "source": "semantic-context",
             }
         )
-    return findings
-
-
-def _model_context_findings(context: dict[str, Any]) -> list[dict[str, Any]]:
-    evidence = dict(context.get("model_evidence") or {})
-    linked_refs = evidence.get("linked_process_refs") or []
-    linked_processes = evidence.get("linked_processes") or []
-    linked_prechecks = evidence.get("linked_prechecks") or []
-    findings: list[dict[str, Any]] = []
-    if not linked_refs:
-        findings.append(
-            {
-                "rule_id": "model.linked_process.audit",
-                "severity": "input_gap",
-                "location": "模型结构 / 关联过程",
-                "evidence": "未识别到模型关联过程引用。",
-                "judgment": "模型完整审核至少需要关联过程列表和关键关联过程的可审数据。",
-                "impact": _impact("input_gap"),
-                "suggestion": "补充模型节点、连接关系和关联过程引用后重新运行 intake-review。",
-                "source": "semantic-context",
-            }
-        )
-    elif not linked_processes:
-        findings.append(
-            {
-                "rule_id": "model.linked_process.audit",
-                "severity": "input_gap",
-                "location": "模型结构 / 关联过程",
-                "evidence": f"识别到 {len(linked_refs)} 个关联过程引用，但没有成功下载关联过程 JSON。",
-                "judgment": "无法复用过程审核结果确认关键关联过程是否支撑模型目标和连接关系。",
-                "impact": _impact("input_gap"),
-                "suggestion": "下载关键关联过程 JSON，并对其运行过程预检和 source 核验。",
-                "source": "semantic-context",
-            }
-        )
-    for precheck in linked_prechecks:
-        summary = dict(precheck.get("summary") or {})
-        if summary.get("blocking"):
-            findings.append(
-                {
-                    "rule_id": "model.linked_process.audit",
-                    "severity": "blocking",
-                    "location": f"模型关联过程 / {precheck.get('dataset_id') or '-'}",
-                    "evidence": f"关联过程预检存在 {summary.get('blocking')} 个阻断问题。",
-                    "judgment": "关键关联过程存在阻断问题时，模型不能直接作为完整通过结论使用。",
-                    "impact": _impact("blocking"),
-                    "suggestion": "先修正关联过程阻断问题，再复核模型目标量和连接关系。",
-                    "source": str(precheck.get("path") or "precheck/linked-processes/*.json"),
-                }
-            )
     return findings
 
 
@@ -1282,6 +1292,11 @@ def _semantic_context_summary(context: dict[str, Any]) -> dict[str, Any]:
 def _read_source_artifacts(case_root: Path) -> list[dict[str, Any]]:
     artifacts = []
     for path in sorted((case_root / "sources").glob("source-*/manifest.json")):
+        try:
+            relative = path.resolve().relative_to(case_root.resolve())
+            resolve_evidence_ref(relative.as_posix(), case_root=case_root)
+        except (OSError, ValueError, RuntimeError):
+            continue
         payload = _read_optional_json(path, default={})
         if isinstance(payload, dict):
             payload["_manifest_path"] = str(path)
@@ -1296,19 +1311,21 @@ def _read_source_documents(
     documents = []
     for artifact in source_artifacts:
         manifest_path = Path(str(artifact.get("_manifest_path") or ""))
+        try:
+            manifest_path.resolve().relative_to(case_root.resolve())
+        except (OSError, ValueError, RuntimeError):
+            continue
         extracted_path_text = str(artifact.get("extracted_text_path") or "")
         if not extracted_path_text:
             continue
         extracted_path = Path(extracted_path_text)
-        if not extracted_path.is_absolute() and manifest_path:
+        if not extracted_path.is_absolute():
             extracted_path = manifest_path.parent / extracted_path
-        if not extracted_path.exists() and manifest_path:
-            extracted_path = manifest_path.parent / Path(extracted_path_text).name
-        if not extracted_path.exists():
-            continue
         try:
+            relative = extracted_path.resolve().relative_to(case_root.resolve())
+            extracted_path = resolve_evidence_ref(relative.as_posix(), case_root=case_root).path
             text = extracted_path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeError, ValueError, RuntimeError):
             continue
         ref = dict(artifact.get("ref") or {})
         source_ref_id = str(
@@ -1346,11 +1363,12 @@ def _read_model_evidence(case_root: Path) -> dict[str, Any]:
     for path in sorted((case_root / "snapshots" / "linked-processes").glob("*.json")):
         payload = _read_optional_json(path, default={})
         if isinstance(payload, dict):
+            process_id, process_version = process_snapshot_identity(payload)
             linked_processes.append(
                 {
                     "path": str(path.relative_to(case_root)),
-                    "id": str(payload.get("id") or ""),
-                    "version": str(payload.get("version") or ""),
+                    "id": process_id,
+                    "version": process_version,
                 }
             )
     linked_prechecks = []

@@ -4,6 +4,8 @@
   "rules": [
     {
       "id": "common.evidence.boundary",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "evidence",
       "rule_type": "deterministic",
       "severity": "manual_review",
@@ -22,6 +24,8 @@
     },
     {
       "id": "common.optional.empty",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "requiredness",
       "rule_type": "deterministic",
       "severity": "advisory",
@@ -40,6 +44,8 @@
     },
     {
       "id": "common.optional.conflict",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "cross_field_consistency",
       "rule_type": "deterministic",
       "severity": "blocking",
@@ -58,6 +64,8 @@
     },
     {
       "id": "common.language.semantic_consistency",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "language",
       "rule_type": "judgment",
       "severity": "advisory",
@@ -76,6 +84,8 @@
     },
     {
       "id": "common.conclusion.scope",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "conclusion",
       "rule_type": "deterministic",
       "severity": "manual_review",

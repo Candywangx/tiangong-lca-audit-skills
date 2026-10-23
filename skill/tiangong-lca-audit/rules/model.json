@@ -11,10 +11,12 @@
   "rules": [
     {
       "id": "model.core.input_coverage",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "input_coverage",
       "rule_type": "deterministic",
       "severity": "input_gap",
-      "condition": "Model goal, target quantity, graph or connection structure, linked process list, or key linked process data is absent.",
+      "condition": "Model goal, interpretable quantitative reference, process-instance structure, linked process list, or key linked process data or complete audit evidence is absent.",
       "evidence_required": ["available model sections and linked process data"],
       "decision": "Record which core model checks cannot be completed.",
       "suggestion": "Provide the missing model structure or linked process data before requesting a full audit.",
@@ -22,6 +24,8 @@
     },
     {
       "id": "model.goal.consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "goal",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -40,8 +44,10 @@
     },
     {
       "id": "model.structure.connectivity",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "structure",
-      "rule_type": "deterministic",
+      "rule_type": "judgment",
       "severity": "blocking",
       "condition": "A key node is missing, duplicated, isolated, reversed, or not connected to the target output.",
       "evidence_required": ["model nodes and connections"],
@@ -58,6 +64,8 @@
     },
     {
       "id": "model.linked_process.role_match",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "linked_processes",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -76,6 +84,8 @@
     },
     {
       "id": "model.linked_process.audit",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "linked_processes",
       "rule_type": "deterministic",
       "severity": "input_gap",
@@ -94,6 +104,8 @@
     },
     {
       "id": "model.overall.boundary_method",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "overall_consistency",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -112,6 +124,8 @@
     },
     {
       "id": "model.metadata.goal_scope_quality",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "manual_review",
