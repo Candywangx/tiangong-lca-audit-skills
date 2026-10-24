@@ -1,0 +1,555 @@
+{
+  "scope": "targeted-rule-boundaries",
+  "scope_note": "仅依据各场景已提供证据审核指定维度；局部通过不代表完整审核通过。未访问平台。",
+  "results": [
+    {
+      "case_id": "O1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "rule_ids": [
+        "common.optional.empty"
+      ],
+      "findings": [],
+      "rationale": "有效期至与采样程序已明确为非必填，空值不影响本次核心检查；SDK缺失提示本身不构成领域问题。",
+      "evidence_refs": [
+        "scenarios.json#/cases/0/evidence/0",
+        "scenarios.json#/cases/0/evidence/1",
+        "scenarios.json#/cases/0/evidence/2"
+      ]
+    },
+    {
+      "case_id": "O2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "rule_ids": [
+        "common.optional.conflict"
+      ],
+      "findings": [
+        {
+          "rule_id": "common.optional.conflict",
+          "severity": "blocking",
+          "location": "可选说明/功能单位/唯一输出",
+          "evidence": "功能单位和唯一输出均1 kg；可选说明写每功能单位实际产出1000 kg；S1支持1 kg。",
+          "evidence_refs": [
+            "scenarios.json#/cases/1/evidence/0",
+            "scenarios.json#/cases/1/evidence/1",
+            "scenarios.json#/cases/1/evidence/2"
+          ],
+          "judgment": "非必填内容已填写且改变核心产出解释，构成已验证矛盾。",
+          "suggestion": "将可选说明中的每功能单位产出改为实验记录支持的1 kg，并核对与功能单位一致。"
+        }
+      ],
+      "rationale": "可选说明称每功能单位实际产出1000 kg，与功能单位及实验唯一产出1 kg直接冲突；不存在其他口径或换算解释。",
+      "evidence_refs": [
+        "scenarios.json#/cases/1/evidence/0",
+        "scenarios.json#/cases/1/evidence/1",
+        "scenarios.json#/cases/1/evidence/2"
+      ]
+    },
+    {
+      "case_id": "O3",
+      "verdict": "cannot_judge",
+      "conclusion": "需人工确认",
+      "rule_ids": [
+        "common.optional.empty"
+      ],
+      "findings": [
+        {
+          "rule_id": "common.optional.empty",
+          "severity": "manual_review",
+          "location": "年产量字段/平台required_missing提示",
+          "evidence": "一次称量功能单位1 kg，交换均按一次称量给出；年产量为空；平台未提供适用必填契约。",
+          "evidence_refs": [
+            "scenarios.json#/cases/2/evidence/0",
+            "scenarios.json#/cases/2/evidence/1",
+            "scenarios.json#/cases/2/evidence/2"
+          ],
+          "judgment": "无法从UI提示确认该字段在本过程中的必填性和领域必要性，需确认适用契约。",
+          "suggestion": "由审核侧查明当前过程类型与版本的年产量必填及适用要求，再决定是否需要提交者补充。"
+        }
+      ],
+      "rationale": "一次称量及交换基准明确，但required_missing未附适用类型与版本的必填契约；年产量字段是否适用于本任务尚不明确，不能依据提示直接阻断。",
+      "evidence_refs": [
+        "scenarios.json#/cases/2/evidence/0",
+        "scenarios.json#/cases/2/evidence/1",
+        "scenarios.json#/cases/2/evidence/2"
+      ]
+    },
+    {
+      "case_id": "S1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "rule_ids": [
+        "process.source.traceability"
+      ],
+      "findings": [],
+      "rationale": "S1表1投入产出各1 t，经T1明示乘1000 kg/t得到各1000 kg，且与功能单位1000 kg一致；Calculated状态不妨碍既有可复核处理链。",
+      "evidence_refs": [
+        "scenarios.json#/cases/3/evidence/0",
+        "scenarios.json#/cases/3/evidence/1",
+        "scenarios.json#/cases/3/evidence/2"
+      ]
+    },
+    {
+      "case_id": "S2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "rule_ids": [
+        "process.source.field_conflict"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.source.field_conflict",
+          "severity": "blocking",
+          "location": "输出盐数量/S2 Page 2 Table 1",
+          "evidence": "数据集功能单位1 kg、输入1 kg、输出1000 kg；S2同次实验投入产出各1 kg，无尺度换算。",
+          "evidence_refs": [
+            "scenarios.json#/cases/4/evidence/0",
+            "scenarios.json#/cases/4/evidence/1",
+            "scenarios.json#/cases/4/evidence/2"
+          ],
+          "judgment": "已验证的来源数量冲突改变产出解释；不另拆追溯缺口或重复数量发现。",
+          "suggestion": "将输出数量校正为S2支持的1 kg，并同步核对该实验的功能单位和交换基准。"
+        }
+      ],
+      "rationale": "同次实验未经调整直接采用S2，但数据集输出1000 kg与S2 Page 2 Table 1的1 kg冲突；按同一根因合并为一项。",
+      "evidence_refs": [
+        "scenarios.json#/cases/4/evidence/0",
+        "scenarios.json#/cases/4/evidence/1",
+        "scenarios.json#/cases/4/evidence/2"
+      ]
+    },
+    {
+      "case_id": "S3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "rule_ids": [
+        "process.source.document_availability"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.source.document_availability",
+          "severity": "input_gap",
+          "location": "source-03附件/关键产出数量核验",
+          "evidence": "附件记录存在，审核工具下载403，未取得正文或摘录。",
+          "evidence_refs": [
+            "scenarios.json#/cases/5/evidence/0",
+            "scenarios.json#/cases/5/evidence/1"
+          ],
+          "judgment": "无法完成关键产出数量的来源核验；当前没有已验证的内容矛盾。",
+          "suggestion": "由审核侧恢复附件访问或补取等效可读摘录，再核验关键产出数量。"
+        }
+      ],
+      "rationale": "关键产出核验所需附件在平台有记录，但审核下载403，现无可读正文；这是审核侧取证失败，不能断言提交者未提供来源或数量错误。",
+      "evidence_refs": [
+        "scenarios.json#/cases/5/evidence/0",
+        "scenarios.json#/cases/5/evidence/1",
+        "scenarios.json#/cases/5/evidence/2"
+      ]
+    },
+    {
+      "case_id": "Q1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "findings": [],
+      "rationale": "同对象、边界、时间、地区与一次称量基准下，1 t按明确换算等于1000 kg；功能描述及交换比例一致。",
+      "evidence_refs": [
+        "scenarios.json#/cases/6/evidence/0",
+        "scenarios.json#/cases/6/evidence/1",
+        "scenarios.json#/cases/6/evidence/2"
+      ]
+    },
+    {
+      "case_id": "Q2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.reference_flow.quantity_unit",
+          "severity": "blocking",
+          "location": "功能单位/唯一基准输出",
+          "evidence": "功能单位1 kg计量后盐，基准输出1000 kg计量后盐；输入1 kg；三者同一实验边界和基准，无换算说明。",
+          "evidence_refs": [
+            "scenarios.json#/cases/7/evidence/0",
+            "scenarios.json#/cases/7/evidence/1"
+          ],
+          "judgment": "量与单位可比较后仍差1000倍，缺少有效换算或缩放解释。",
+          "suggestion": "确认实验真实基准量，统一功能单位、基准输出及全部交换的缩放关系。"
+        }
+      ],
+      "rationale": "功能单位1 kg与唯一基准输出1000 kg处于同一实验基准，无缩放、批量或年度解释，构成明确参考量冲突。",
+      "evidence_refs": [
+        "scenarios.json#/cases/7/evidence/0",
+        "scenarios.json#/cases/7/evidence/1",
+        "scenarios.json#/cases/7/evidence/2"
+      ]
+    },
+    {
+      "case_id": "Q3",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "findings": [],
+      "rationale": "交换虽无直接unit字段，但精确UUID/版本已绑定，参考属性指针mass-1解析为质量，当前单位组参考单位kg，amount=1可解释为1 kg，与功能单位一致。",
+      "evidence_refs": [
+        "scenarios.json#/cases/8/evidence/0",
+        "scenarios.json#/cases/8/evidence/1",
+        "scenarios.json#/cases/8/evidence/2"
+      ]
+    },
+    {
+      "case_id": "Q4",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.reference_flow.quantity_unit",
+          "severity": "input_gap",
+          "location": "flow-04@01.00.000/referenceToReferenceFlowProperty=mass-2",
+          "evidence": "当前指针mass-2，可见部分属性仅energy-1=Energy/kWh，缺少mass-2及其单位证据。",
+          "evidence_refs": [
+            "scenarios.json#/cases/9/evidence/0",
+            "scenarios.json#/cases/9/evidence/1",
+            "scenarios.json#/cases/9/evidence/2"
+          ],
+          "judgment": "无法确定amount=1的参考单位，因此不能判定与1 kg功能单位一致或冲突。",
+          "suggestion": "由审核侧补取该精确流版本的mass-2参考属性及单位链，再比较参考量。"
+        }
+      ],
+      "rationale": "身份匹配不等于参考单位已解析；指针mass-2未出现在部分投影中，不能拿energy-1/kWh替代，也不能推断完整流缺失mass-2。",
+      "evidence_refs": [
+        "scenarios.json#/cases/9/evidence/0",
+        "scenarios.json#/cases/9/evidence/1",
+        "scenarios.json#/cases/9/evidence/2"
+      ]
+    },
+    {
+      "case_id": "R1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "rule_ids": [
+        "process.representativeness.consistency"
+      ],
+      "findings": [],
+      "rationale": "德国2020年同类技术电力代理与上海2024年存在已披露差异；材料说明无本地数据、技术依据及本地电量与代理因子分工，限于方法探索且排除本地平均与对外比较，当前用途下无已证实代表性矛盾。",
+      "evidence_refs": [
+        "scenarios.json#/cases/10/evidence/0",
+        "scenarios.json#/cases/10/evidence/1",
+        "scenarios.json#/cases/10/evidence/2"
+      ]
+    },
+    {
+      "case_id": "R2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "rule_ids": [
+        "process.source.field_conflict"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.source.field_conflict",
+          "severity": "blocking",
+          "location": "电力排放因子本地实测声明/S-R2",
+          "evidence": "数据集称S-R2为上海2024年本地实测、未经代理转换；S-R2明确德国2018年煤电机组测量。",
+          "evidence_refs": [
+            "scenarios.json#/cases/11/evidence/0",
+            "scenarios.json#/cases/11/evidence/1",
+            "scenarios.json#/cases/11/evidence/2"
+          ],
+          "judgment": "地点、年份和技术来源与直接实测声明矛盾，改变代表性及复用范围。",
+          "suggestion": "依据S-R2纠正来源地点、年份和技术声明，并按实际用途说明代理选择、调整及适用限制。"
+        }
+      ],
+      "rationale": "数据集声称直接取自上海2024年本地实测，但可读来源明确为德国2018年煤电测量且无转换链，属于已验证的来源代表性声明冲突。",
+      "evidence_refs": [
+        "scenarios.json#/cases/11/evidence/0",
+        "scenarios.json#/cases/11/evidence/1",
+        "scenarios.json#/cases/11/evidence/2"
+      ]
+    },
+    {
+      "case_id": "R3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "rule_ids": [
+        "process.representativeness.consistency"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.representativeness.consistency",
+          "severity": "input_gap",
+          "location": "来源时间/地域/技术范围及代理说明",
+          "evidence": "目标中国2024年钢材；来源未说明年份、地域，技术仅钢材生产，不能区分高炉与电炉。",
+          "evidence_refs": [
+            "scenarios.json#/cases/12/evidence/0",
+            "scenarios.json#/cases/12/evidence/1",
+            "scenarios.json#/cases/12/evidence/2"
+          ],
+          "judgment": "缺少源与目标比较的必要事实，无法判断是否支持目标情景。",
+          "suggestion": "补充来源采样年份、地域和技术路线，并说明针对中国2024年情景的代理理由与限制。"
+        }
+      ],
+      "rationale": "源采样年份、地域范围及高炉/电炉路线均未知，且无代理理由和限制；缺的是建立代表性关系所需的事实，当前未证实不适用。",
+      "evidence_refs": [
+        "scenarios.json#/cases/12/evidence/0",
+        "scenarios.json#/cases/12/evidence/1",
+        "scenarios.json#/cases/12/evidence/2"
+      ]
+    },
+    {
+      "case_id": "V1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "rule_ids": [
+        "model.linked_process.audit"
+      ],
+      "findings": [],
+      "rationale": "当前P1@01.00.000快照H1与完整语义报告的身份、版本、hash一致，报告具备核心规则及来源覆盖；在指定关联审核证据绑定范围内成立。",
+      "evidence_refs": [
+        "scenarios.json#/cases/13/evidence/0",
+        "scenarios.json#/cases/13/evidence/1",
+        "scenarios.json#/cases/13/evidence/2"
+      ]
+    },
+    {
+      "case_id": "V2",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "rule_ids": [
+        "model.linked_process.audit"
+      ],
+      "findings": [
+        {
+          "rule_id": "model.linked_process.audit",
+          "severity": "input_gap",
+          "location": "关键过程P1@02.00.000/完整审核报告",
+          "evidence": "本轮快照P1@02.00.000 hash=H2，唯一报告P1@01.00.000 hash=H1。",
+          "evidence_refs": [
+            "scenarios.json#/cases/14/evidence/0",
+            "scenarios.json#/cases/14/evidence/1",
+            "scenarios.json#/cases/14/evidence/2"
+          ],
+          "judgment": "版本及当前快照均不匹配，历史通过不能证明当前关键过程已审。",
+          "suggestion": "对P1@02.00.000/H2完成完整过程语义审核，并将证据索引绑定本轮快照。"
+        }
+      ],
+      "rationale": "旧版01.00.000/H1通过报告不能覆盖当前02.00.000/H2；没有当前内容错误证据，问题是关键过程审核证据缺口。",
+      "evidence_refs": [
+        "scenarios.json#/cases/14/evidence/0",
+        "scenarios.json#/cases/14/evidence/1",
+        "scenarios.json#/cases/14/evidence/2"
+      ]
+    },
+    {
+      "case_id": "V3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "rule_ids": [
+        "process.flow.version_identity"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.flow.version_identity",
+          "severity": "input_gap",
+          "location": "交换F3引用/流版本映射",
+          "evidence": "交换无版本；仅有latest 03.00.000元数据，未提供历史映射。",
+          "evidence_refs": [
+            "scenarios.json#/cases/15/evidence/0",
+            "scenarios.json#/cases/15/evidence/1",
+            "scenarios.json#/cases/15/evidence/2"
+          ],
+          "judgment": "精确引用无法解析，latest元数据不能作为当前引用的已验证证据；这不证明流内容有错。",
+          "suggestion": "由审核侧取得该交换所引用F3的精确版本或可核验历史映射，再核查相应元数据。"
+        }
+      ],
+      "rationale": "交换仅有F3 UUID且无版本，latest=03.00.000未与原交换建立可核验映射，不能据此认定当前引用为该版本。",
+      "evidence_refs": [
+        "scenarios.json#/cases/15/evidence/0",
+        "scenarios.json#/cases/15/evidence/1",
+        "scenarios.json#/cases/15/evidence/2"
+      ]
+    },
+    {
+      "case_id": "V4",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "rule_ids": [
+        "process.source.field_conflict",
+        "model.linked_process.audit"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.source.field_conflict",
+          "severity": "blocking",
+          "location": "已核验关键过程/输出盐数量/S4 Page 2 Table 1",
+          "evidence": "功能单位及输入均1 kg，输出1000 kg；S4输出1 kg，无倍率、换算或代理；已确认影响模型目标产出解释。",
+          "evidence_refs": [
+            "scenarios.json#/cases/16/evidence/0",
+            "scenarios.json#/cases/16/evidence/2"
+          ],
+          "judgment": "关键过程存在已验证数量来源冲突，影响模型解释，因此聚合不通过。",
+          "suggestion": "将关键过程输出与S4实验基准统一，并核查修正对模型目标量的影响。"
+        },
+        {
+          "rule_id": "model.linked_process.audit",
+          "severity": "input_gap",
+          "location": "关键过程P2@02.00.000/审核报告",
+          "evidence": "P2当前02.00.000仅有01.00.000历史通过报告，没有当前版本审核。",
+          "evidence_refs": [
+            "scenarios.json#/cases/16/evidence/1"
+          ],
+          "judgment": "这是独立的审核完整性缺口，不能由旧报告覆盖，也不因已有阻断而省略。",
+          "suggestion": "对P2@02.00.000当前快照完成完整过程审核并绑定相同版本及hash。"
+        }
+      ],
+      "rationale": "一个关键过程已证实产出1000 kg与直接采用的1 kg实验来源冲突，且明确改变模型目标产出解释，足以阻断；另一过程当前版本未审的独立缺口仍须保留。",
+      "evidence_refs": [
+        "scenarios.json#/cases/16/evidence/0",
+        "scenarios.json#/cases/16/evidence/1",
+        "scenarios.json#/cases/16/evidence/2"
+      ]
+    },
+    {
+      "case_id": "R4",
+      "verdict": "cannot_judge",
+      "conclusion": "需人工确认",
+      "rule_ids": [
+        "process.representativeness.consistency"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.representativeness.consistency",
+          "severity": "manual_review",
+          "location": "德国2020高炉—转炉热轧代理/中国2024探索情景适用性",
+          "evidence": "双方同为高炉—转炉热轧，钢种流程规模参数接近，部分能源结构不同；关键事实与代理理由已提供。",
+          "evidence_refs": [
+            "scenarios.json#/cases/17/evidence/0",
+            "scenarios.json#/cases/17/evidence/1",
+            "scenarios.json#/cases/17/evidence/2"
+          ],
+          "judgment": "争议在已知差异能否被研究目的接受，而不是缺少已提供的年份地区或技术字段；地区年份差异本身不足以阻断。",
+          "suggestion": "请熟悉该研究的审核员评估能源结构差异对结论的影响，并记录可接受用途、限制或必要调整。"
+        }
+      ],
+      "rationale": "源与目标年份、地区、技术路线、边界、能源构成、用途等事实完整；技术相近但能源差异可能影响结论，当前证据既未证明适用也未证明不适用，应进行专业适用性判断。",
+      "evidence_refs": [
+        "scenarios.json#/cases/17/evidence/0",
+        "scenarios.json#/cases/17/evidence/1",
+        "scenarios.json#/cases/17/evidence/2"
+      ]
+    },
+    {
+      "case_id": "S4",
+      "verdict": "cannot_judge",
+      "conclusion": "需人工确认",
+      "rule_ids": [
+        "process.source.traceability"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.source.traceability",
+          "severity": "manual_review",
+          "location": "处理报告T4/干燥与自然含水样品校正方法选择",
+          "evidence": "T4列出两种可能适用校正法，数据集注明使用校正值但未解释选择；现有材料无法确认方法用错。",
+          "evidence_refs": [
+            "scenarios.json#/cases/18/evidence/0",
+            "scenarios.json#/cases/18/evidence/1",
+            "scenarios.json#/cases/18/evidence/2"
+          ],
+          "judgment": "现有处理链的选择理由未解决，须核实实际样品条件后才能判断校正是否适当。",
+          "suggestion": "核实样品为干燥还是自然含水状态，并注明实际采用的T4校正方法及其依据。"
+        }
+      ],
+      "rationale": "来源与处理报告均已完整阅读，原始值、单位、目标值和版本可定位，但两种按样品条件选择的校正方法未明确采用哪种；不能据此断言来源未提供或方法错误。",
+      "evidence_refs": [
+        "scenarios.json#/cases/18/evidence/0",
+        "scenarios.json#/cases/18/evidence/1",
+        "scenarios.json#/cases/18/evidence/2"
+      ]
+    },
+    {
+      "case_id": "F1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "rule_ids": [
+        "process.flow.semantic_match"
+      ],
+      "findings": [],
+      "rationale": "工业钢板作为制造用产品输出，与已绑定精确流快照的工业钢板名称、Product flow类型、钢铁产品分类及质量kg单位一致，指定流角色检查未见矛盾。",
+      "evidence_refs": [
+        "scenarios.json#/cases/19/evidence/0",
+        "scenarios.json#/cases/19/evidence/1",
+        "scenarios.json#/cases/19/evidence/2"
+      ]
+    },
+    {
+      "case_id": "F2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "rule_ids": [
+        "process.flow.semantic_match"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.flow.semantic_match",
+          "severity": "blocking",
+          "location": "二氧化碳排放交换/引用的市场销售钢板流",
+          "evidence": "过程与实测清单明确烟囱向空气排放CO2；精确绑定完整流快照为市场销售钢板、Product flow、钢铁产品、kg。",
+          "evidence_refs": [
+            "scenarios.json#/cases/20/evidence/0",
+            "scenarios.json#/cases/20/evidence/1",
+            "scenarios.json#/cases/20/evidence/2"
+          ],
+          "judgment": "即使身份绑定正确，引用内容仍与实际排放对象和环境角色冲突，影响后续计算。",
+          "suggestion": "将该交换改引与CO2向空气排放对象及接收环境一致的基本流，核对方向、参考属性和单位。"
+        }
+      ],
+      "rationale": "已确认交换为烟囱向空气排放CO2且无捕集销售，却引用市场销售钢板Product flow；对象及产品/排放角色直接矛盾并影响排放去向。",
+      "evidence_refs": [
+        "scenarios.json#/cases/20/evidence/0",
+        "scenarios.json#/cases/20/evidence/1",
+        "scenarios.json#/cases/20/evidence/2"
+      ]
+    },
+    {
+      "case_id": "F3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "rule_ids": [
+        "process.flow.semantic_match"
+      ],
+      "findings": [
+        {
+          "rule_id": "process.flow.semantic_match",
+          "severity": "input_gap",
+          "location": "交换F3@01.00.000/关联流类型与分类",
+          "evidence": "只读交换表说明工业钢板并引用F3@01.00.000，API标记流详情不包含在投影；尚未取得流数据集。",
+          "evidence_refs": [
+            "scenarios.json#/cases/21/evidence/0",
+            "scenarios.json#/cases/21/evidence/1",
+            "scenarios.json#/cases/21/evidence/2"
+          ],
+          "judgment": "已知字段不能完成产品流角色核查；未展示元数据不等于提交数据缺字段或角色错误。",
+          "suggestion": "由审核侧补取F3@01.00.000关联流详情，核对类型、分类、名称与实际工业钢板角色。"
+        }
+      ],
+      "rationale": "交换表未含关联流详情，API明确这是当前投影缺省；没有证据证明原流未填写类型和分类，需补取精确版本详情才能判断角色。",
+      "evidence_refs": [
+        "scenarios.json#/cases/21/evidence/0",
+        "scenarios.json#/cases/21/evidence/1",
+        "scenarios.json#/cases/21/evidence/2"
+      ]
+    }
+  ]
+}

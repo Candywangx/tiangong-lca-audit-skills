@@ -12,6 +12,8 @@
   "rules": [
     {
       "id": "process.core.input_coverage",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "input_coverage",
       "rule_type": "deterministic",
       "severity": "input_gap",
@@ -23,6 +25,8 @@
     },
     {
       "id": "process.object.consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "object",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -34,6 +38,8 @@
     },
     {
       "id": "process.type.boundary_match",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -57,6 +63,8 @@
     },
     {
       "id": "process.type.partly_terminated_evidence",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -80,6 +88,8 @@
     },
     {
       "id": "process.lci.type_compatibility",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "deterministic",
       "severity": "advisory",
@@ -98,6 +108,8 @@
     },
     {
       "id": "process.boundary.lifecycle_stage_contradiction",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "deterministic",
       "severity": "blocking",
@@ -121,6 +133,8 @@
     },
     {
       "id": "process.boundary.cutoff_and_exclusions",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -139,6 +153,8 @@
     },
     {
       "id": "process.boundary.cutoff_placeholder",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "boundary_and_type",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -157,29 +173,48 @@
     },
     {
       "id": "process.reference_flow.quantity_unit",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "reference_flow",
       "rule_type": "deterministic",
       "severity": "blocking",
-      "condition": "The functional unit or reference-flow statement conflicts with the core output quantity, unit, or referenced exchange.",
-      "evidence_required": ["functional unit or reference-flow statement", "core output exchange", "quantity and unit"],
-      "decision": "Treat an unexplained quantity, unit, or reference mismatch as blocking.",
-      "suggestion": "Use one reference quantity and unit across the description, reference flow, and all exchanges.",
-      "exceptions": ["A valid conversion or scaling relationship is explicitly documented."],
+      "condition": "The functional unit or reference-flow statement conflicts with the core output quantity, unit, or referenced exchange after their object, boundary, reference basis and any documented conversion have been established.",
+      "evidence_required": [
+        "functional unit or reference-flow statement",
+        "core output exchange and reference pointer",
+        "quantity and unit evidence, including the referenced flow/property/unit chain where needed",
+        "documented conversion or scaling and the common reference basis"
+      ],
+      "decision": "Treat a verified unexplained quantity, unit, or reference mismatch as blocking. Missing quantity or unresolved unit evidence is input_gap, not proof of a mismatch. Identical unit labels alone do not establish comparable quantities; interpretation of different boundaries or product roles requires Agent judgment.",
+      "suggestion": "Reconcile the reference quantity, referenced exchange and exchange scaling using an explicit common basis and any supported conversion; obtain unresolved unit evidence before prescribing a correction.",
+      "exceptions": [
+        "A valid conversion or scaling relationship is explicitly documented and applies consistently to the compared quantities.",
+        "Raw TIDAS exchanges need not carry a unit field when the corresponding flow reference property and unit evidence resolve it.",
+        "Partial linked-flow evidence does not prove the original dataset lacks a reference property; do not substitute the first visible property."
+      ],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "03-数据收集.md",
-          "sections": ["功能、功能单位和基准流", "基准流的参考量"]
+          "sections": [
+            "功能、功能单位和基准流",
+            "基准流的参考量"
+          ]
         },
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "04-数据文档.md",
-          "sections": ["过程信息", "定量参考"]
+          "sections": [
+            "过程信息",
+            "定量参考"
+          ]
         }
       ]
     },
     {
       "id": "process.reference_flow.annual_supply_unit",
+      "agent_review_required": true,
+      "allow_not_applicable": true,
       "dimension": "reference_flow",
       "rule_type": "deterministic",
       "severity": "advisory",
@@ -198,6 +233,8 @@
     },
     {
       "id": "process.inventory.boundary_consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "deterministic",
       "severity": "blocking",
@@ -216,6 +253,8 @@
     },
     {
       "id": "process.inventory.key_flow_completeness",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -234,6 +273,8 @@
     },
     {
       "id": "process.inventory.quantity_plausibility",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -252,6 +293,8 @@
     },
     {
       "id": "process.recycling.secondary_material_burden",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -275,6 +318,8 @@
     },
     {
       "id": "process.coproduct.role_and_allocation",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -293,6 +338,8 @@
     },
     {
       "id": "process.allocation.method_traceability",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -316,6 +363,8 @@
     },
     {
       "id": "process.flow.semantic_match",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -327,24 +376,37 @@
         "unit if relevant",
         "searched classification candidates when the issue involves classification"
       ],
-      "decision": "Treat as blocking when the mismatch affects calculation, connection, search, or emission destination; otherwise advisory.",
+      "decision": "Treat a verified mismatch as blocking when it affects calculation, connection, search, or emission destination; otherwise advisory. Missing or unreadable linked metadata produces input_gap for the affected check, not a verified semantic mismatch. A partial view cannot prove that the submitted flow lacks those fields.",
       "suggestion": "Choose or create a flow whose name, type, classification, direction, and reference unit match its actual role; when the issue involves classification, include candidate classification paths or candidate ranges and the condition for choosing among them.",
-      "exceptions": ["The platform offers no exact category and the selected near-match is reasonable."],
+      "exceptions": [
+        "The platform offers no exact category and the selected near-match is reasonable.",
+        "Type, classification or unit evidence is absent from the supplied view; obtain the referenced flow evidence and preserve the audit limitation instead of asserting an incorrect flow."
+      ],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "02-数据集组成.md",
-          "sections": ["基本流", "产品流", "废物流"]
+          "sections": [
+            "基本流",
+            "产品流",
+            "废物流"
+          ]
         },
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "04-数据文档.md",
-          "sections": ["命名", "流命名", "产品和废物流命名"]
+          "sections": [
+            "命名",
+            "流命名",
+            "产品和废物流命名"
+          ]
         }
       ]
     },
     {
       "id": "process.flow.purchased_elementary_input_role",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -368,24 +430,38 @@
     },
     {
       "id": "process.flow.version_identity",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "deterministic",
       "severity": "input_gap",
-      "condition": "An exchange references a flow dataset UUID or persistent identity, but the flow dataset version is absent.",
-      "evidence_required": ["flow UUID or persistent identity", "flow version field"],
-      "decision": "Record a traceability gap because the exact flow dataset cannot be distinguished from other versions.",
-      "suggestion": "Provide the referenced flow dataset version, or re-export the exchange with complete flow identity metadata.",
-      "exceptions": ["The source system does not expose flow versions and the audit scope is limited to visible page fields."],
+      "condition": "An exchange has a persistent flow reference whose exact version cannot be established, or the linked flow evidence has an incomplete or conflicting identity.",
+      "evidence_required": [
+        "exchange flow UUID or persistent identity and version",
+        "linked flow UUID and version when linked metadata is supplied",
+        "provenance of the exact linked snapshot or mapping used for this audit"
+      ],
+      "decision": "Record input_gap when the exact referenced flow cannot be verified. Do not use conflicting linked-flow metadata or an unbound latest version as evidence for the current reference. Prefer this specific rule over a generic evidence finding for flow-version gaps; missing or mismatched evidence does not itself prove the flow content is wrong.",
+      "suggestion": "Obtain the flow snapshot or a verifiable mapping for the exact referenced ID and version, then recheck the affected flow metadata and unit.",
+      "exceptions": [
+        "A verified mapping establishes the exact referenced version.",
+        "A partial audit may describe the visible fields but cannot claim that an unresolved flow identity or its unit has been verified."
+      ],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "04-数据文档.md",
-          "sections": ["基本通用信息", "数据集版本"]
+          "sections": [
+            "基本通用信息",
+            "数据集版本"
+          ]
         }
       ]
     },
     {
       "id": "process.flow.form_unit_consistency",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -409,6 +485,8 @@
     },
     {
       "id": "process.inventory.water_balance_boundary",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -427,6 +505,8 @@
     },
     {
       "id": "process.flow.review_status",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "inventory",
       "rule_type": "deterministic",
       "severity": "advisory",
@@ -438,6 +518,8 @@
     },
     {
       "id": "process.classification.process_fit",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "advisory",
@@ -461,29 +543,47 @@
     },
     {
       "id": "process.source.traceability",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
-      "severity": "blocking",
-      "condition": "Key data, parameters, or calculation logic cannot be traced sufficiently to assess the dataset.",
-      "evidence_required": ["source description", "key parameter or calculation evidence"],
-      "decision": "Treat as blocking when lack of traceability prevents verification; otherwise advisory.",
-      "suggestion": "Identify the source and explain the treatment or calculation of the key data.",
-      "exceptions": ["A cited source or processing report already provides adequate traceability.", "Calculated status alone is not an error."],
+      "severity": "manual_review",
+      "condition": "Key data, parameters or calculation logic lack a verifiable link from the cited evidence to the current dataset claim.",
+      "evidence_required": [
+        "source reference and its acquisition/readability status",
+        "key source value or parameter and its location",
+        "treatment or calculation chain to the dataset value and its reference basis"
+      ],
+      "decision": "Use input_gap for unacquired evidence needed for a core check, and manual_review for an unresolved treatment or applicability explanation. Use blocking only when visible evidence establishes a material provenance defect; failed access, an unsuccessful search, or Calculated status alone is insufficient. For a direct source contradiction, use the specific source-field-conflict rule and avoid duplicate findings for the same cause.",
+      "suggestion": "Identify the specific missing source location or treatment step and obtain it; distinguish recovery of reviewer access from a documented omission in the submission.",
+      "exceptions": [
+        "A cited source or processing report already supplies a verifiable chain, including a justified conversion, allocation or scaling.",
+        "Equivalent evidence elsewhere in the case supports the claim.",
+        "A source used only for background need not support quantities that are explicitly based on a different identified source."
+      ],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "03-数据收集.md",
-          "sections": ["所需数据和信息类型/质量/来源", "报告记录"]
+          "sections": [
+            "所需数据和信息类型/质量/来源",
+            "报告记录"
+          ]
         },
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "04-数据文档.md",
-          "sections": ["报告", "数据集 LCA 报告，背景信息"]
+          "sections": [
+            "报告",
+            "数据集 LCA 报告，背景信息"
+          ]
         }
       ]
     },
     {
       "id": "process.source.document_availability",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "input_gap",
@@ -507,6 +607,8 @@
     },
     {
       "id": "process.source.field_conflict",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -525,6 +627,8 @@
     },
     {
       "id": "process.source.field_not_supported",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -543,6 +647,8 @@
     },
     {
       "id": "process.description.source_content_attribution",
+      "agent_review_required": true,
+      "allow_not_applicable": true,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -561,24 +667,39 @@
     },
     {
       "id": "process.representativeness.consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "source_and_representativeness",
       "rule_type": "judgment",
       "severity": "manual_review",
-      "condition": "Reference year, geography, technology, source, and intended use do not appear mutually supportive.",
-      "evidence_required": ["time", "geography", "technology", "source or intended use"],
-      "decision": "Treat as blocking only when a clear contradiction materially affects applicability.",
-      "suggestion": "Align the representativeness description with the actual source, year, geography, and technology.",
-      "exceptions": ["The dataset explicitly explains why broader or proxy representation is appropriate."],
+      "condition": "The documented source time, geography, technology and intended use do not establish a justified representativeness relationship for the claimed application.",
+      "evidence_required": [
+        "source time, geography and technology",
+        "target application, time, geography and technology",
+        "proxy or adjustment rationale and disclosed limitations when relevant"
+      ],
+      "decision": "Use input_gap when essential source or target facts are missing; use manual_review when facts are available but applicability requires expert judgment. Treat as blocking only a verified material contradiction, such as claiming local primary data that the cited source directly disproves without an explained adjustment. Differences in year or region alone do not establish unsuitability, and matching metadata alone does not establish scientific suitability.",
+      "suggestion": "Identify the source and target contexts and explain the proxy choice, adjustment and use limitations; correct any verified misleading representativeness claim.",
+      "exceptions": [
+        "A broader or proxy representation has evidence-based justification and explicit limitations consistent with the stated use; this does not establish suitability for other applications."
+      ],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "05-数据质量评价方法.md",
-          "sections": ["技术代表性", "地理代表性", "时间代表性", "精度"]
+          "sections": [
+            "技术代表性",
+            "地理代表性",
+            "时间代表性",
+            "精度"
+          ]
         }
       ]
     },
     {
       "id": "process.metadata.dqr_completeness",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "manual_review",
@@ -597,6 +718,8 @@
     },
     {
       "id": "process.metadata.goal_scope_documentation",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "advisory",
@@ -615,6 +738,8 @@
     },
     {
       "id": "process.metadata.review_report_traceability",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "advisory",
@@ -639,6 +764,8 @@
     },
     {
       "id": "process.management.identity",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "management",
       "rule_type": "deterministic",
       "severity": "input_gap",

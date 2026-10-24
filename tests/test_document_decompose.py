@@ -206,6 +206,36 @@ def test_sync_saves_page_evidence_without_losing_null_types(
     assert "test-secret" not in (output / "request.json").read_text()
 
 
+@pytest.mark.parametrize("service_txt", ["Inventory\\_2026 and C:\\data", ""])
+def test_plain_fulltext_unescapes_upstream_underscores_without_changing_evidence(
+    monkeypatch, service, tmp_path, service_txt
+):
+    service["sync"] = {
+        "result": [
+            {"text": "Inventory\\_2026 and C:\\data", "page_number": 1},
+        ],
+        "txt": service_txt,
+    }
+    output = tmp_path / "parsed"
+    plain = tmp_path / "plain.txt"
+    assert (
+        run(
+            monkeypatch,
+            service,
+            tmp_path,
+            "--output-dir",
+            str(output),
+            "--output",
+            str(plain),
+        )
+        == 0
+    )
+    assert (output / "fulltext.txt").read_text() == "Inventory_2026 and C:\\data"
+    assert plain.read_text() == "Inventory_2026 and C:\\data"
+    assert json.loads((output / "result.json").read_text()) == service["sync"]
+    assert "Inventory\\_2026" in (output / "extracted.md").read_text()
+
+
 @pytest.mark.parametrize(
     "mode,endpoint",
     [

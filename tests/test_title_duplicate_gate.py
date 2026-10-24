@@ -4,6 +4,7 @@ import pytest
 
 from tiangong_audit.workflows.title_duplicate import (
     check_title_duplicates,
+    dataset_payload,
     require_title_duplicate_clearance,
 )
 
@@ -93,6 +94,22 @@ def test_model_with_different_graph_json_is_not_identical():
 
     result = check_title_duplicates(current, "model", FakeDatasetAPI([current, other]))
 
+    assert result["status"] == "clear"
+    assert result["matches"][0]["content_identical"] is False
+
+
+def test_model_metadata_in_json_and_graph_in_json_tg_can_be_checked():
+    current = model_row("model-current")
+    current["json"] = current.pop("json_tg")
+    current["json_tg"] = {"xflow": {"nodes": ["process-a"]}}
+    other = model_row("model-other")
+    other["json"] = other.pop("json_tg")
+    other["json_tg"] = {"xflow": {"nodes": ["process-b"]}}
+
+    result = check_title_duplicates(current, "model", FakeDatasetAPI([current, other]))
+
+    assert "lifeCycleModelDataSet" in dataset_payload(current)
+    assert result["titles"]["zh"] == "单晶硅模型"
     assert result["status"] == "clear"
     assert result["matches"][0]["content_identical"] is False
 

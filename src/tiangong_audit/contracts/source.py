@@ -112,6 +112,7 @@ class SourceCheck:
     checked_source_id: str = ""
     matched_excerpt: str = ""
     confidence_reason: str = ""
+    evidence_refs: list[str] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -130,5 +131,6 @@ class SourceCheck:
             "notes": self.notes,
             "rule_id": self.rule_id,
             "confidence_reason": self.confidence_reason,
+            "evidence_refs": list(self.evidence_refs),
             "extra": dict(self.extra),
         }

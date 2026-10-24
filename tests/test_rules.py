@@ -19,6 +19,8 @@ REQUIRED_RULE_FIELDS = {
     "decision",
     "suggestion",
     "exceptions",
+    "agent_review_required",
+    "allow_not_applicable",
 }
 VALID_RULE_TYPES = {"deterministic", "judgment"}
 VALID_SEVERITIES = {"blocking", "advisory", "manual_review", "input_gap"}
@@ -41,6 +43,8 @@ def test_rule_catalog_is_single_and_structured():
             assert REQUIRED_RULE_FIELDS <= rule.keys()
             assert rule["rule_type"] in VALID_RULE_TYPES
             assert rule["severity"] in VALID_SEVERITIES
+            assert isinstance(rule["agent_review_required"], bool)
+            assert isinstance(rule["allow_not_applicable"], bool)
             assert rule["evidence_required"]
             for ref in rule.get("standard_refs", []):
                 assert ref["source"] == CFIA_SOURCE
@@ -134,3 +138,14 @@ def test_guardrail_catalog_is_structurally_valid():
     # future maintainer can trace it back to the correction record.
     for entry in payload["guardrails"]:
         assert entry["origin_case"]
+
+
+def test_model_mandatory_dimensions_include_semantic_connectivity():
+    from tiangong_audit.contracts.rule_catalog import load_rule_catalog, required_rule_ids
+    assert set(required_rule_ids("model")) == {
+        "model.goal.consistency", "model.structure.connectivity",
+        "model.linked_process.role_match", "model.linked_process.audit",
+        "model.overall.boundary_method", "model.metadata.goal_scope_quality",
+    }
+    assert load_rule_catalog("model")["model.structure.connectivity"]["rule_type"] == "judgment"
+    assert len(required_rule_ids("process")) == 13

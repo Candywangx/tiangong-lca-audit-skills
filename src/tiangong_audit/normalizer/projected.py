@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 from typing import Any
 
 NORMALIZED_SCHEMA = "tiangong-audit-normalized-v1"
@@ -81,9 +82,15 @@ def _number(value: Any) -> float | None:
     if value in (None, ""):
         return None
     try:
-        return float(str(value).replace(",", ""))
+        number = float(str(value).replace(",", ""))
+        return number if math.isfinite(number) else None
     except ValueError:
         return None
+
+
+def _quantity(row: dict[str, Any], primary: str, fallback: str) -> float | None:
+    value = row.get(primary)
+    return _number(row.get(fallback) if value in (None, "") else value)
 
 
 def _normalize_exchange(row: dict[str, Any], fallback_direction: str) -> dict[str, Any]:
@@ -187,9 +194,9 @@ def _classifications(value: Any) -> list[dict[str, str]]:
 
 def _flow_property(
     flow_dataset: dict[str, Any], reference_property_id: str
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[dict[str, str], dict[str, str], str]:
     properties = _get_path(flow_dataset, "flowProperties", "flowProperty")
-    selected = None
+    matches = []
     for item in _items(properties):
         if not isinstance(item, dict):
             continue
@@ -201,13 +208,17 @@ def _flow_property(
             or ""
         )
         if reference_property_id and item_id == reference_property_id:
-            selected = item
-            break
-        if selected is None:
-            selected = item
+            matches.append(item)
 
-    if not isinstance(selected, dict):
-        return {"zh": "", "en": "", "raw": ""}, {"zh": "", "en": "", "raw": ""}
+    if len(matches) != 1:
+        status = (
+            "missing_pointer" if not reference_property_id
+            else "ambiguous" if matches
+            else "unmatched"
+        )
+        return {"zh": "", "en": "", "raw": ""}, {"zh": "", "en": "", "raw": ""}, status
+
+    selected = matches[0]
 
     reference_property = _localized_text(
         _get_path(selected, "referenceToFlowPropertyDataSet", "shortDescription")
@@ -218,13 +229,54 @@ def _flow_property(
         or selected.get("referenceToUnitGroupDataSet")
         or selected.get("unit")
     )
-    return reference_property, reference_unit
+    return reference_property, reference_unit, "matched"
+
+
+def _flow_binding(reference: dict[str, Any], flow_dataset: dict[str, Any]) -> dict[str, str]:
+    information = _get_path(flow_dataset, "flowInformation", "dataSetInformation") or {}
+    reference_uuid = str(
+        reference.get("@refObjectId") or reference.get("refObjectId")
+        or reference.get("uuid") or reference.get("@uuid") or ""
+    )
+    reference_version = str(reference.get("@version") or reference.get("version") or "")
+    embedded_uuid = str(
+        information.get("UUID") or information.get("common:UUID")
+        or information.get("@UUID") or ""
+    )
+    publication = _get_path(flow_dataset, "administrativeInformation", "publicationAndOwnership") or {}
+    embedded_version = str(publication.get("dataSetVersion") or publication.get("common:dataSetVersion") or "")
+    if not flow_dataset:
+        status = "missing"
+    elif (
+        (reference_uuid and embedded_uuid and reference_uuid != embedded_uuid)
+        or (reference_version and embedded_version and reference_version != embedded_version)
+    ):
+        status = "mismatch"
+    elif not (reference_uuid and reference_version):
+        status = "incomplete"
+    elif not (embedded_uuid or embedded_version):
+        # Older exports omit embedded identity; retain their metadata with an explicit gap.
+        status = "legacy"
+    elif not (embedded_uuid and embedded_version):
+        status = "incomplete"
+    else:
+        status = "matched"
+    return {
+        "status": status,
+        "reference_uuid": reference_uuid,
+        "reference_version": reference_version,
+        "embedded_uuid": embedded_uuid,
+        "embedded_version": embedded_version,
+    }
 
 
 def _normalize_raw_exchange(row: dict[str, Any], reference_pointer: str) -> dict[str, Any]:
     direction = str(row.get("exchangeDirection") or row.get("direction") or "").lower()
     reference = row.get("referenceToFlowDataSet") or {}
     flow_dataset = row.get("flowDataSet") or {}
+    flow_binding = _flow_binding(reference, flow_dataset)
+    if flow_binding["status"] not in {"matched", "legacy"}:
+        flow_dataset = {}
     flow_information = _get_path(flow_dataset, "flowInformation") or {}
     data_set_information = _get_path(flow_information, "dataSetInformation") or {}
     exchange_description = _localized_text(
@@ -240,7 +292,7 @@ def _normalize_raw_exchange(row: dict[str, Any], reference_pointer: str) -> dict
         _get_path(flow_information, "quantitativeReference", "referenceToReferenceFlowProperty")
         or ""
     )
-    reference_property, reference_unit = _flow_property(flow_dataset, reference_property_id)
+    reference_property, reference_unit, property_binding = _flow_property(flow_dataset, reference_property_id)
     internal_id = str(
         row.get("@dataSetInternalID")
         or row.get("dataSetInternalID")
@@ -260,8 +312,8 @@ def _normalize_raw_exchange(row: dict[str, Any], reference_pointer: str) -> dict
         "internal_id": internal_id,
         "direction": "input" if direction.startswith("input") else "output",
         "name": name,
-        "amount": _number(row.get("resultingAmount") or row.get("meanAmount")),
-        "mean_amount": _number(row.get("meanAmount") or row.get("resultingAmount")),
+        "amount": _quantity(row, "resultingAmount", "meanAmount"),
+        "mean_amount": _quantity(row, "meanAmount", "resultingAmount"),
         "unit": reference_unit,
         "derivation": str(row.get("dataDerivationTypeStatus") or ""),
         "is_reference": bool(row.get("referenceToReferenceFlow")) or internal_id == reference_pointer,
@@ -275,6 +327,8 @@ def _normalize_raw_exchange(row: dict[str, Any], reference_pointer: str) -> dict
             or ""
         ),
         "flow_version": str(reference.get("@version") or reference.get("version") or ""),
+        "flow_binding": flow_binding,
+        "reference_property_binding": property_binding,
         "exchange_description": exchange_description,
         "flow_dataset_name": flow_dataset_name,
         "reference_property": reference_property,
@@ -403,3 +457,39 @@ def normalize_dataset(payload: dict[str, Any]) -> dict[str, Any]:
         "Unsupported input JSON. Expected a projected Tiangong dataset with categories[] "
         f", raw processDataSet, or normalized schema {NORMALIZED_SCHEMA}."
     )
+
+
+def bound_evidence_view(dataset: dict[str, Any]) -> dict[str, Any]:
+    """Keep display metadata separate from evidence usable by automated consumers.
+
+    Legacy raw exports retain embedded metadata for inspection, but an embedded
+    flow without a verified UUID/version binding cannot establish exchange facts.
+    Existing projected inputs have no binding marker and keep their visible facts.
+    """
+    result = deepcopy(dataset)
+    exchanges = result.get("exchanges") or {}
+    groups = [
+        exchanges.get("inputs") or [],
+        exchanges.get("outputs") or [],
+        (result.get("reference_flow") or {}).get("exchanges") or [],
+    ]
+    for group in groups:
+        for exchange in group:
+            binding = exchange.get("flow_binding") or {}
+            if not binding.get("status") or binding["status"] == "matched":
+                continue
+            raw = exchange.get("raw") or {}
+            unit = (
+                raw.get("unit") or raw.get("referenceUnit")
+                or raw.get("common:referenceUnit") or raw.get("@unit") or ""
+            )
+            exchange.update({
+                "name": deepcopy(exchange.get("exchange_description") or {"zh": "", "en": "", "raw": ""}),
+                "flow_dataset_name": {"zh": "", "en": "", "raw": ""},
+                "flow_type": str(raw.get("flowType") or ""),
+                "classification": [],
+                "unit": deepcopy(unit),
+                "reference_unit": _localized_text(unit),
+                "reference_property": {"zh": "", "en": "", "raw": ""},
+            })
+    return result

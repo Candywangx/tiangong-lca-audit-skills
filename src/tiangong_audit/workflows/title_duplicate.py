@@ -16,8 +16,12 @@ CONFIRMATION_RELATIVE_PATH = "agent-review/title-duplicate-confirmation.json"
 
 def dataset_payload(row: dict[str, Any]) -> dict[str, Any]:
     for key in ("json_ordered", "json_tg", "json"):
-        if isinstance(row.get(key), dict):
-            return row[key]
+        value = row.get(key)
+        if isinstance(value, dict) and any(
+            isinstance(value.get(root), dict)
+            for root in ("processDataSet", "lifeCycleModelDataSet")
+        ):
+            return value
     return row
 
 

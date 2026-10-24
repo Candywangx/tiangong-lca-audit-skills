@@ -11,10 +11,12 @@
   "rules": [
     {
       "id": "model.core.input_coverage",
+      "agent_review_required": false,
+      "allow_not_applicable": false,
       "dimension": "input_coverage",
       "rule_type": "deterministic",
       "severity": "input_gap",
-      "condition": "Model goal, target quantity, graph or connection structure, linked process list, or key linked process data is absent.",
+      "condition": "Model goal, interpretable quantitative reference, process-instance structure, linked process list, or key linked process data or complete audit evidence is absent.",
       "evidence_required": ["available model sections and linked process data"],
       "decision": "Record which core model checks cannot be completed.",
       "suggestion": "Provide the missing model structure or linked process data before requesting a full audit.",
@@ -22,6 +24,8 @@
     },
     {
       "id": "model.goal.consistency",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "goal",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -40,8 +44,10 @@
     },
     {
       "id": "model.structure.connectivity",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "structure",
-      "rule_type": "deterministic",
+      "rule_type": "judgment",
       "severity": "blocking",
       "condition": "A key node is missing, duplicated, isolated, reversed, or not connected to the target output.",
       "evidence_required": ["model nodes and connections"],
@@ -58,6 +64,8 @@
     },
     {
       "id": "model.linked_process.role_match",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "linked_processes",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -76,24 +84,35 @@
     },
     {
       "id": "model.linked_process.audit",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "linked_processes",
       "rule_type": "deterministic",
       "severity": "input_gap",
-      "condition": "A key linked process has not been supplied or audited.",
-      "evidence_required": ["key linked process list", "process audit summaries"],
-      "decision": "Do not confirm model completeness without reviewing key linked processes.",
-      "suggestion": "Provide and audit each key linked process, then summarize whether its findings affect the model.",
+      "condition": "A key linked process lacks complete audit evidence bound to its exact ID, version and current intake snapshot.",
+      "evidence_required": [
+        "key linked process list with exact ID and version",
+        "current linked-process snapshot and its identity",
+        "complete process semantic audit evidence meeting the input contract"
+      ],
+      "decision": "Do not confirm model completeness using an old, different-version, partial or unbound report. Keep the gap distinct from a demonstrated process content error; independently verified blockers that affect the model remain blocking. Apply the snapshot, coverage and legacy-context admission requirements in the input contract.",
+      "suggestion": "Obtain or complete the audit for each current key process snapshot and explain the effect of its verified findings on the model.",
       "exceptions": [],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "05-数据质量评价方法.md",
-          "sections": ["数据审查", "数据验证"]
+          "sections": [
+            "数据审查",
+            "数据验证"
+          ]
         }
       ]
     },
     {
       "id": "model.overall.boundary_method",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "overall_consistency",
       "rule_type": "judgment",
       "severity": "blocking",
@@ -112,6 +131,8 @@
     },
     {
       "id": "model.metadata.goal_scope_quality",
+      "agent_review_required": true,
+      "allow_not_applicable": false,
       "dimension": "data_quality_and_metadata",
       "rule_type": "judgment",
       "severity": "manual_review",

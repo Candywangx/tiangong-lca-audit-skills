@@ -19,6 +19,7 @@ from .title_duplicate import (
     CHECK_RELATIVE_PATH,
     CONFIRMATION_RELATIVE_PATH,
     check_title_duplicates,
+    dataset_payload as _dataset_payload,
     require_title_duplicate_clearance,
 )
 
@@ -48,7 +49,15 @@ def intake_review(
             f"Review task {review_id} is missing data_id or data_version"
         )
 
-    dataset_result = dataset_api.resolve_dataset(dataset_id, version)
+    task_json = task.get("json") if isinstance(task.get("json"), dict) else {}
+    task_data = task_json.get("data") if isinstance(task_json.get("data"), dict) else {}
+    target_table = task_data.get("table")
+    if target_table == "processes":
+        dataset_result = {"dataset_type": "process", "data": dataset_api.get_process(dataset_id, version)}
+    elif target_table == "lifecyclemodels":
+        dataset_result = {"dataset_type": "model", "data": dataset_api.get_model(dataset_id, version)}
+    else:
+        dataset_result = dataset_api.resolve_dataset(dataset_id, version)
     dataset_type = str(dataset_result.get("dataset_type") or "")
     dataset_row = dict(dataset_result.get("data") or {})
     dataset_payload = _dataset_payload(dataset_row)
@@ -231,14 +240,6 @@ def _get_or_create_case(
 
 def _default_batch_id(account_role: str) -> str:
     return f"{date.today().strftime('%Y%m%d')}-{account_role}"
-
-
-def _dataset_payload(row: dict[str, Any]) -> dict[str, Any]:
-    for key in ("json_ordered", "json_tg", "json"):
-        value = row.get(key)
-        if isinstance(value, dict):
-            return value
-    return row
 
 
 def _dataset_name(payload: dict[str, Any]) -> dict[str, str]:

@@ -135,6 +135,28 @@ def test_intake_review_fetches_task_dataset_sources_and_claims(tmp_path):
     assert manifest.status == "intake_completed"
 
 
+def test_intake_uses_review_target_table_when_process_and_model_share_id(tmp_path):
+    class SharedIdPlatformClient(FakePlatformClient):
+        def rpc(self, name, payload):
+            task = super().rpc(name, payload)[0]
+            task["json"] = {"data": {"table": "processes"}}
+            return [task]
+
+        def select(self, table, *, columns="*", filters=None, limit=None, offset=None):
+            if table == "lifecyclemodels":
+                return [{"id": "process-1", "version": "01.01.000", "json": {"lifeCycleModelDataSet": {}}}]
+            return super().select(table, columns=columns, filters=filters, limit=limit, offset=offset)
+
+    summary = intake_review(
+        "review-1", root=tmp_path, batch_id="batch-1",
+        case_store=CaseStore(tmp_path / "cases"), client=SharedIdPlatformClient(),
+    )
+
+    assert summary["dataset_type"] == "process"
+    case_root = tmp_path / "cases" / summary["case_dir"]
+    assert "processDataSet" in json.loads((case_root / "snapshots/dataset.raw.json").read_text())
+
+
 def test_intake_pauses_before_audit_when_same_title_and_content_have_other_uuid(tmp_path):
     class DuplicatePlatformClient(FakePlatformClient):
         def select(self, table, *, columns="*", filters=None, limit=None, offset=None):

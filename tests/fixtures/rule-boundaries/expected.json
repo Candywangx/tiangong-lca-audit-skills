@@ -1,0 +1,349 @@
+{
+  "description": "维护者预期，盲测执行Agent不得读取。仅指定维度通过，不证明全量审核通过。",
+  "cases": [
+    {
+      "case_id": "O1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "required_severities": [],
+      "rule_ids": [
+        "common.optional.empty"
+      ],
+      "evidence_ref": "scenarios.json#/cases/0/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得制造任何无证据问题或补交要求"
+      ]
+    },
+    {
+      "case_id": "O2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "required_severities": [
+        "blocking"
+      ],
+      "rule_ids": [
+        "common.optional.conflict"
+      ],
+      "evidence_ref": "scenarios.json#/cases/1/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过"
+      ]
+    },
+    {
+      "case_id": "O3",
+      "verdict": "cannot_judge",
+      "conclusion": "需人工确认",
+      "required_severities": [
+        "manual_review"
+      ],
+      "rule_ids": [
+        "common.optional.empty"
+      ],
+      "evidence_ref": "scenarios.json#/cases/2/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得将缺证据直接升为数据错误阻断"
+      ]
+    },
+    {
+      "case_id": "S1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "required_severities": [],
+      "rule_ids": [
+        "process.source.traceability",
+        "process.source.field_conflict"
+      ],
+      "evidence_ref": "scenarios.json#/cases/3/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得制造任何无证据问题或补交要求"
+      ]
+    },
+    {
+      "case_id": "S2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "required_severities": [
+        "blocking"
+      ],
+      "rule_ids": [
+        "process.source.field_conflict",
+        "process.reference_flow.quantity_unit"
+      ],
+      "evidence_ref": "scenarios.json#/cases/4/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过"
+      ]
+    },
+    {
+      "case_id": "S3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "required_severities": [
+        "input_gap"
+      ],
+      "rule_ids": [
+        "process.source.document_availability"
+      ],
+      "evidence_ref": "scenarios.json#/cases/5/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得将缺证据直接升为数据错误阻断",
+        "不得把403说成提交者未提供来源"
+      ]
+    },
+    {
+      "case_id": "Q1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "required_severities": [],
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "evidence_ref": "scenarios.json#/cases/6/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得制造任何无证据问题或补交要求"
+      ]
+    },
+    {
+      "case_id": "Q2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "required_severities": [
+        "blocking"
+      ],
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "evidence_ref": "scenarios.json#/cases/7/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过"
+      ]
+    },
+    {
+      "case_id": "Q3",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "required_severities": [],
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "evidence_ref": "scenarios.json#/cases/8/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得制造任何无证据问题或补交要求"
+      ]
+    },
+    {
+      "case_id": "Q4",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "required_severities": [
+        "input_gap"
+      ],
+      "rule_ids": [
+        "process.reference_flow.quantity_unit"
+      ],
+      "evidence_ref": "scenarios.json#/cases/9/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得将缺证据直接升为数据错误阻断"
+      ]
+    },
+    {
+      "case_id": "R1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "required_severities": [],
+      "rule_ids": [
+        "process.representativeness.consistency"
+      ],
+      "evidence_ref": "scenarios.json#/cases/10/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得制造任何无证据问题或补交要求"
+      ]
+    },
+    {
+      "case_id": "R2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "required_severities": [
+        "blocking"
+      ],
+      "rule_ids": [
+        "process.representativeness.consistency",
+        "process.source.field_conflict"
+      ],
+      "evidence_ref": "scenarios.json#/cases/11/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过"
+      ]
+    },
+    {
+      "case_id": "R3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "required_severities": [
+        "input_gap"
+      ],
+      "rule_ids": [
+        "process.representativeness.consistency"
+      ],
+      "evidence_ref": "scenarios.json#/cases/12/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得将缺证据直接升为数据错误阻断"
+      ],
+      "oracle_correction": "独立规格复核依据audit-policy发现类型与聚合边界：缺少核心事实为input_gap，规则默认manual_review不能覆盖。原manual_review预期错误；保留基线原始输出。"
+    },
+    {
+      "case_id": "V1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "required_severities": [],
+      "rule_ids": [
+        "model.linked_process.audit"
+      ],
+      "evidence_ref": "scenarios.json#/cases/13/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得制造任何无证据问题或补交要求"
+      ]
+    },
+    {
+      "case_id": "V2",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "required_severities": [
+        "input_gap"
+      ],
+      "rule_ids": [
+        "model.linked_process.audit"
+      ],
+      "evidence_ref": "scenarios.json#/cases/14/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得将缺证据直接升为数据错误阻断"
+      ]
+    },
+    {
+      "case_id": "V3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "required_severities": [
+        "input_gap"
+      ],
+      "rule_ids": [
+        "process.flow.version_identity"
+      ],
+      "evidence_ref": "scenarios.json#/cases/15/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得将缺证据直接升为数据错误阻断"
+      ]
+    },
+    {
+      "case_id": "V4",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "required_severities": [
+        "blocking",
+        "input_gap"
+      ],
+      "rule_ids": [
+        "model.linked_process.audit",
+        "model.overall.boundary_method",
+        "process.reference_flow.quantity_unit",
+        "process.source.field_conflict"
+      ],
+      "evidence_ref": "scenarios.json#/cases/16/evidence",
+      "forbidden_behaviors": [
+        "不得将局部结论写成完整审核通过",
+        "不得因其他缺口掩盖已验证阻断"
+      ],
+      "rule_match_note": "数量矛盾可用已验证source冲突、参考量或模型边界规则定位同一根因；还须单独保留model.linked_process.audit的信息缺口，不要求重复报同一数量问题。"
+    },
+    {
+      "case_id": "R4",
+      "verdict": "cannot_judge",
+      "conclusion": "需人工确认",
+      "required_severities": [
+        "manual_review"
+      ],
+      "rule_ids": [
+        "process.representativeness.consistency"
+      ],
+      "evidence_ref": "scenarios.json#/cases/17/evidence",
+      "forbidden_behaviors": [
+        "不得把地区年份不同直接判定为阻断",
+        "不得将需要判断的适用性伪装成缺少已提供事实"
+      ]
+    },
+    {
+      "case_id": "S4",
+      "verdict": "cannot_judge",
+      "conclusion": "需人工确认",
+      "required_severities": [
+        "manual_review"
+      ],
+      "rule_ids": [
+        "process.source.traceability"
+      ],
+      "evidence_ref": "scenarios.json#/cases/18/evidence",
+      "forbidden_behaviors": [
+        "不得凭缺证据直接判定内容错误",
+        "不得把局部判断表述为完整审核通过"
+      ]
+    },
+    {
+      "case_id": "F1",
+      "verdict": "pass",
+      "conclusion": "局部通过",
+      "required_severities": [],
+      "rule_ids": [
+        "process.flow.semantic_match"
+      ],
+      "evidence_ref": "scenarios.json#/cases/19/evidence",
+      "forbidden_behaviors": [
+        "不得凭缺证据直接判定内容错误",
+        "不得把局部判断表述为完整审核通过"
+      ]
+    },
+    {
+      "case_id": "F2",
+      "verdict": "fail",
+      "conclusion": "不通过",
+      "required_severities": [
+        "blocking"
+      ],
+      "rule_ids": [
+        "process.flow.semantic_match"
+      ],
+      "evidence_ref": "scenarios.json#/cases/20/evidence",
+      "forbidden_behaviors": [
+        "不得凭缺证据直接判定内容错误",
+        "不得把局部判断表述为完整审核通过"
+      ]
+    },
+    {
+      "case_id": "F3",
+      "verdict": "cannot_judge",
+      "conclusion": "信息不足",
+      "required_severities": [
+        "input_gap"
+      ],
+      "rule_ids": [
+        "process.flow.semantic_match"
+      ],
+      "evidence_ref": "scenarios.json#/cases/21/evidence",
+      "forbidden_behaviors": [
+        "不得凭缺证据直接判定内容错误",
+        "不得把局部判断表述为完整审核通过"
+      ]
+    }
+  ]
+}

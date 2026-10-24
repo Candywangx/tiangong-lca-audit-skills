@@ -20,6 +20,10 @@ PLATFORM_LABELS = {
 MAX_PLATFORM_OPINION_LENGTH = 1000
 
 
+class PlatformOpinionTooLong(ValueError):
+    """The platform opinion needs human consolidation before it can be used."""
+
+
 def _finding_ref_key(ref: Any) -> tuple[str, str]:
     if not isinstance(ref, dict) or not all(
         isinstance(ref.get(key), str) and ref[key].strip() for key in ("path", "pointer")
@@ -128,7 +132,7 @@ def render_platform_return_opinion(result: dict[str, Any]) -> str:
             lines.append("")
     rendered = "\n".join(lines).rstrip() + "\n"
     if len(rendered) > MAX_PLATFORM_OPINION_LENGTH:
-        raise ValueError(
+        raise PlatformOpinionTooLong(
             f"平台退回意见不得超过 {MAX_PLATFORM_OPINION_LENGTH} 字（含标题、编号、标识和换行）；"
             "请合并同根问题并精简文字，保留全部已验证阻断问题。"
         )
@@ -166,5 +170,14 @@ def render_findings(result: dict[str, Any]) -> str:
                     "",
                 ]
             )
-    lines.extend(["", render_platform_return_opinion(result).rstrip()])
+    try:
+        platform_opinion = render_platform_return_opinion(result).rstrip()
+    except PlatformOpinionTooLong:
+        lines.extend([
+            "",
+            "## 平台意见草稿状态",
+            "预检发现已完整列于上文；平台意见超过 1000 字，须经审核员合并和改写后生成。",
+        ])
+    else:
+        lines.extend(["", platform_opinion])
     return "\n".join(lines).rstrip() + "\n"

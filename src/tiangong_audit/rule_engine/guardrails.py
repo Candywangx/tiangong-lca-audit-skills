@@ -14,6 +14,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from tiangong_audit.normalizer.projected import bound_evidence_view
+
 from .engine import (
     _all_exchanges,
     _combined_language_text,
@@ -124,6 +126,7 @@ def guardrail_rule_ids(payload: dict[str, Any]) -> set[str]:
 
 
 def run_guardrails(dataset: dict[str, Any], payload: dict[str, Any]) -> list[dict[str, str]]:
+    dataset = bound_evidence_view(dataset)
     findings: list[dict[str, str]] = []
     for entry in payload.get("guardrails", []):
         if not isinstance(entry, dict):

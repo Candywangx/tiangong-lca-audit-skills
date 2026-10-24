@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiangong-audit.local/schemas/source-check.schema.json",
+  "title": "Tiangong Audit Source Check",
+  "type": "object",
+  "required": ["field", "status"],
+  "properties": {
+    "schema_version": {"const": "tiangong-audit-source-v1"},
+    "field": {"type": "string", "minLength": 1},
+    "dataset_value": {"type": "string"},
+    "source_ref_id": {"type": "string"},
+    "checked_source_id": {"type": "string"},
+    "status": {"enum": ["matched", "conflict", "not_applicable", "ambiguous", "not_found"]},
+    "evidence": {"type": "string"},
+    "matched_excerpt": {"type": "string"},
+    "page": {"type": ["integer", "null"], "minimum": 1},
+    "notes": {"type": "string"},
+    "rule_id": {"type": "string"},
+    "confidence_reason": {"type": "string"},
+    "evidence_refs": {"type": "array", "default": [], "items": {"type": "string", "minLength": 1}},
+    "extra": {"type": "object"}
+  },
+  "additionalProperties": false
+}

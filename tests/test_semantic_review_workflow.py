@@ -26,7 +26,7 @@ def test_semantic_review_stops_without_title_duplicate_check(tmp_path):
 
 def test_authored_platform_opinions_round_trip_without_changing_audit_findings(tmp_path):
     _write_skill_contract_files(tmp_path)
-    store, case_root = _create_clean_process_case(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path, claims={"process.reference_flow.unit": "t"})
     issue = {
         "verdict": "fail", "severity": "blocking", "location": "参考流 / 单位",
         "evidence": "来源第 3 页为 kg，录入单位为 t。", "judgment": "单位不符。",
@@ -132,7 +132,7 @@ def test_source_tool_failures_remain_internal_with_authored_opinions(tmp_path):
 @pytest.mark.parametrize("invalid", [False, "missing", "wrong_severity", "passed_rule"])
 def test_source_conflict_severity_requires_matching_valid_agent_finding(tmp_path, invalid):
     _write_skill_contract_files(tmp_path)
-    store, case_root = _create_clean_process_case(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path, claims={"process.cutoff.zh": "覆盖比例"}, extracted_text="费用比例")
     rule_id = required_rule_ids("process")[0]
     _write_agent_findings(case_root, overrides={rule_id: {
         "verdict": "fail", "severity": "advisory", "location": "描述 / 覆盖范围",
@@ -170,7 +170,7 @@ def test_source_conflict_severity_requires_matching_valid_agent_finding(tmp_path
 @pytest.mark.parametrize("status, conclusion", [("conflict", "不通过"), ("ambiguous", "需人工确认"), ("not_found", "需人工确认")])
 def test_reviewed_advisory_does_not_remove_other_source_limits(tmp_path, status, conclusion):
     _write_skill_contract_files(tmp_path)
-    store, case_root = _create_clean_process_case(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path, claims={"process.cutoff.zh": "覆盖比例", "process.time.referenceYear": "2024"}, extracted_text="来源中的范围；2023")
     _write_agent_findings(case_root, overrides={required_rule_ids("process")[0]: {
         "verdict": "fail", "severity": "advisory", "location": "描述 / 范围",
         "evidence": "来源使用不同描述。", "judgment": "需澄清描述。", "suggestion": "请澄清描述。",
@@ -214,7 +214,7 @@ def test_unknown_source_severity_cannot_be_laundered_into_a_manual_opinion(tmp_p
     _write_json(case_root / "agent-review/platform-opinions.json", {"items": [{
         "severity": "manual_review", "text": "单位待核实。请核对单位。", "finding_refs": [ref],
     }]})
-    with pytest.raises(ValueError, match="severity|actionable"):
+    with pytest.raises(ValueError, match="severity|actionable|Unknown platform opinion finding_ref"):
         semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
 
 
@@ -226,7 +226,7 @@ def test_agent_authored_source_issue_is_not_confused_with_a_tool_limitation(tmp_
     payload = json.loads(path.read_text())
     payload["additional_findings"] = [{
         "rule_id": "source.identity.clarify", "severity": "advisory", "location": "来源 / 署名",
-        "evidence": "来源作者姓名缺少中间名。", "judgment": "补齐署名便于检索。", "suggestion": "请补齐姓名。",
+        "evidence": "来源作者姓名缺少中间名。", "judgment": "补齐署名便于检索。", "suggestion": "请补齐姓名。", "evidence_refs": ["sources/source-001/extracted.md"],
     }]
     _write_json(path, payload)
     authored = [{"severity": "advisory", "text": "来源作者姓名缺少中间名。请补齐姓名，便于检索。", "finding_refs": [
@@ -253,8 +253,13 @@ def test_cannot_judge_advisory_cannot_approve_or_downgrade_source_conflict(tmp_p
             },
         }})
     _write_json(case_root / "source-checks/checks.json", [check])
-    with pytest.raises(ValueError, match="cannot_judge"):
-        semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    if override_source:
+        with pytest.raises(ValueError, match="reviewed_finding_ref"):
+            semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    else:
+        result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+        assert result["conclusion"] == "信息不足"
+        assert result["agent_review"]["rule_review_errors"]
 
 
 def test_source_override_requires_original_fail_verdict_not_just_normalized_severity():
@@ -285,6 +290,7 @@ def test_semantic_review_merges_precheck_source_checks_and_agent_gaps(tmp_path):
             "name": {"baseName": [{"@xml:lang": "zh", "#text": "叶片制造"}]}
         }}}},
     )
+    _write_json(case_root / "source-checks/claims.json", {"process.name.zh": "叶片制造", "process.route.en": "Blade diameter 151 m", "process.dataset_type": "Unit process, black box"})
     precheck = {
         "dataset": {
             "id": "dataset-1",
@@ -743,7 +749,7 @@ def _write_clear_title_check(case_root: Path) -> None:
     _write_json(case_root / "snapshots/dataset.raw.json", row["json"])
 
 
-def _create_clean_process_case(tmp_path: Path, *, extracted_text: str = "blade manufacture 2024"):
+def _create_clean_process_case(tmp_path: Path, *, extracted_text: str = "blade manufacture 2024\n# Page 4\ndata collected in 2024", claims: dict | None = None):
     store = CaseStore(tmp_path / "cases")
     manifest = store.create_case(
         review_id="review-1",
@@ -779,8 +785,9 @@ def _create_clean_process_case(tmp_path: Path, *, extracted_text: str = "blade m
         },
     )
     (case_root / "sources/source-001/extracted.md").write_text(
-        extracted_text, encoding="utf-8"
+        "# Page 3\nblade manufacture\n" + extracted_text, encoding="utf-8"
     )
+    _write_json(case_root / "source-checks/claims.json", claims if claims is not None else {"process.name.zh": "叶片制造"})
     return store, case_root
 
 
@@ -850,3 +857,242 @@ def _write_skill_contract_files(root: Path) -> None:
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_invalid_blocking_record_is_isolated_but_valid_blocker_survives(tmp_path, mixed):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    ids = required_rule_ids("process")
+    issue = {"verdict": "fail", "severity": "blocking", "location": "单位",
+             "evidence": "", "judgment": "不一致", "suggestion": "修正单位",
+             "evidence_refs": ["snapshots/dataset.raw.json"]}
+    overrides = {ids[0]: issue}
+    if mixed:
+        overrides[ids[1]] = {**issue, "evidence": "来源单位为kg，数据集为t"}
+    _write_agent_findings(case_root, overrides=overrides)
+    _write_json(case_root / "source-checks/checks.json", [{"field": "process.name", "status": "matched"}])
+    result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    assert result["conclusion"] == ("不通过" if mixed else "信息不足")
+    assert result["summary"]["blocking"] == int(mixed)
+    assert result["agent_review"]["required_covered"] == len(ids) - 1
+    report = json.loads((case_root / "reports/semantic-review.json").read_text())
+    assert not any(item["rule_id"] == ids[0] for item in report["findings"])
+
+
+def test_invalid_additional_blocker_does_not_become_formal_finding(tmp_path):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root)
+    path = case_root / "agent-review/agent-findings.json"
+    payload = json.loads(path.read_text())
+    payload["additional_findings"] = [{"rule_id": "agent.invalid", "severity": "blocking", "location": "单位"}]
+    _write_json(path, payload)
+    _write_json(case_root / "source-checks/checks.json", [{"field": "process.name", "status": "matched"}])
+    result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    assert result["conclusion"] == "信息不足"
+    assert result["summary"]["blocking"] == 0
+
+
+@pytest.mark.parametrize("missing", ["evidence", "source_ref_id"])
+def test_source_conflict_without_evidence_or_source_is_quarantined(tmp_path, missing):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root)
+    check = {"field": "process.name", "status": "conflict", "evidence": "名称不同", "source_ref_id": "source-1"}
+    check.pop(missing)
+    _write_json(case_root / "source-checks/checks.json", [check])
+    result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    assert result["conclusion"] == "信息不足"
+    assert result["summary"]["blocking"] == 0
+
+
+@pytest.mark.parametrize("file_error", ["schema_version", "reviewed_by", "dataset_type", "rule_reviews", "additional_findings"])
+def test_file_errors_isolate_all_agent_records(tmp_path, file_error):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root, overrides={required_rule_ids("process")[0]: {
+        "verdict": "fail", "severity": "blocking", "location": "单位", "evidence": "单位不同",
+        "judgment": "不一致", "suggestion": "核对单位", "evidence_refs": ["snapshots/dataset.raw.json"],
+    }})
+    path = case_root / "agent-review/agent-findings.json"
+    payload = json.loads(path.read_text())
+    payload[file_error] = "wrong" if file_error != "reviewed_by" else ""
+    _write_json(path, payload)
+    _write_json(case_root / "source-checks/checks.json", [{"field": "process.name", "status": "matched"}])
+    result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    assert result["conclusion"] == "信息不足"
+    assert result["summary"]["blocking"] == 0
+    assert result["agent_review"]["required_covered"] == 0
+
+
+def test_non_object_agent_file_is_diagnosed_as_invalid_input(tmp_path):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_json(case_root / "agent-review/agent-findings.json", ["invalid"])
+    _write_json(case_root / "source-checks/checks.json", [{"field": "process.name", "status": "matched"}])
+    result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    assert result["conclusion"] == "信息不足"
+    assert result["agent_review"]["file_errors"] == ["agent findings payload must be a JSON object"]
+
+
+def test_valid_source_downgrade_survives_unrelated_invalid_record(tmp_path):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path, claims={"process.cutoff.zh": "覆盖比例"}, extracted_text="费用比例")
+    ids = required_rule_ids("process")
+    _write_agent_findings(case_root, overrides={
+        ids[0]: {"verdict": "fail", "severity": "advisory", "location": "描述",
+                 "evidence": "原文是费用比例", "judgment": "需澄清", "suggestion": "澄清比例",
+                 "evidence_refs": ["sources/source-001/extracted.md:p3"]},
+        ids[1]: {"verdict": "pass", "evidence": "", "evidence_refs": []},
+    })
+    _write_json(case_root / "source-checks/checks.json", [{
+        "field": "process.cutoff.zh", "status": "conflict", "source_ref_id": "source-1",
+        "evidence": "费用比例", "extra": {"reviewed_severity": "advisory", "reviewed_finding_ref": {
+            "path": "agent-review/agent-findings.json", "pointer": "/rule_reviews/0",
+        }},
+    }])
+    result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    assert result["conclusion"] == "信息不足"
+    assert result["source_consistency"]["advisory_conflict_count"] == 1
+    assert result["summary"]["blocking"] == 0
+
+
+def test_additional_admission_preserves_original_pointer(tmp_path):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root)
+    path = case_root / "agent-review/agent-findings.json"
+    payload = json.loads(path.read_text())
+    payload["additional_findings"] = [
+        {"severity": "blocking"},
+        {"rule_id": "agent.valid", "severity": "blocking", "location": "单位",
+         "evidence": "单位不同", "judgment": "不一致", "suggestion": "核对单位", "evidence_refs": ["snapshots/dataset.raw.json"]},
+    ]
+    _write_json(path, payload)
+    _write_json(case_root / "source-checks/checks.json", [{"field": "process.name", "status": "matched"}])
+    result = semantic_review("review-1", root=tmp_path, batch_id="b-1", case_store=store)
+    assert result["conclusion"] == "不通过"
+    report = json.loads((case_root / "reports/semantic-review.json").read_text())
+    finding = next(item for item in report["findings"] if item["rule_id"] == "agent.valid")
+    assert finding["finding_ref"]["pointer"] == "/additional_findings/1"
+
+
+def test_all_na_reviews_never_produce_complete_pass(tmp_path):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root, verdict='not_applicable')
+    summary = semantic_review('review-1', root=tmp_path, batch_id='b-1', case_store=store)
+    assert summary['conclusion'] == '信息不足'
+    assert not summary['agent_review']['valid']
+    assert summary['agent_review']['required_covered'] == 2
+
+
+def test_dqr_scope_exception_cannot_waive_complete_review(tmp_path):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root, overrides={
+        'process.metadata.dqr_completeness': {
+            'verdict': 'not_applicable', 'evidence': '平台未展示DQR。',
+            'judgment': '本轮仅看清单内容。', 'evidence_refs': ['snapshots/dataset.raw.json'],
+        },
+    })
+    summary = semantic_review('review-1', root=tmp_path, batch_id='b-1', case_store=store)
+    assert summary['conclusion'] == '信息不足'
+    assert summary['agent_review']['required_covered'] == len(required_rule_ids('process')) - 1
+
+
+@pytest.mark.parametrize('change', ['missing_agent_ref', 'wrong_review', 'wrong_dataset', 'unknown_source', 'missing_source', 'p999', 'unknown_field', 'wrong_value', 'empty_excerpt', 'unsupported_na', 'unknown_status', 'list_status', 'dict_status'])
+def test_context_rejects_unverified_judgments(tmp_path, change):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root)
+    _write_json(case_root / 'source-checks/claims.json', {'process.name.zh': '叶片制造'})
+    check = {'field': 'process.name.zh', 'dataset_value': '叶片制造', 'status': 'matched', 'source_ref_id': 'source-1', 'evidence': 'blade manufacture', 'page': 3}
+    agent_path = case_root / 'agent-review/agent-findings.json'
+    agent = json.loads(agent_path.read_text())
+    if change == 'missing_agent_ref':
+        agent['rule_reviews'][0]['evidence_refs'] = ['missing.json#/x']
+    elif change == 'wrong_review':
+        agent['review_id'] = 'another-review'
+    elif change == 'wrong_dataset':
+        agent['dataset_id'] = 'another-dataset'
+    elif change == 'unknown_source':
+        check['source_ref_id'] = 'source-404'
+    elif change == 'missing_source':
+        (case_root / 'sources/source-001/extracted.md').unlink()
+    elif change == 'p999':
+        check['page'] = 999
+    elif change == 'unknown_field':
+        check['field'] = 'process.unknown'
+    elif change == 'wrong_value':
+        check['dataset_value'] = '另一值'
+    elif change == 'empty_excerpt':
+        check.update(status='conflict', evidence='')
+    elif change == 'unsupported_na':
+        check.update(status='not_applicable', evidence='')
+    else:
+        check['status'] = {'list_status': [], 'dict_status': {}}.get(change, 'invented')
+    _write_json(agent_path, agent)
+    _write_json(case_root / 'source-checks/checks.json', [check])
+    result = semantic_review('review-1', root=tmp_path, batch_id='b-1', case_store=store)
+    assert result['conclusion'] == '信息不足'
+    semantic = json.loads((case_root / 'reports/semantic-review.json').read_text())
+    assert not any(f['rule_id'] == 'source.field.conflict' for f in semantic['findings'])
+    context = json.loads((case_root / 'reports/semantic-context.json').read_text())
+    assert context['source_checks'] == [check]
+
+
+def test_source_document_paths_cannot_escape_or_fallback(tmp_path):
+    from tiangong_audit.workflows.semantic_review import _read_source_documents, _path_acknowledged
+    case = tmp_path / 'case'
+    source = case / 'sources/source-001'
+    source.mkdir(parents=True)
+    (source / 'extracted.md').write_text('wrong fallback')
+    outside = tmp_path / 'extracted.md'
+    outside.write_text('private')
+    (source / 'escape.md').symlink_to(outside)
+    for path in (str(outside), '../../../extracted.md', 'missing/extracted.md', 'escape.md'):
+        assert _read_source_documents(case, [{'_manifest_path': str(source / 'manifest.json'), 'extracted_text_path': path}]) == []
+    assert _read_source_documents(case, [{'_manifest_path': str(source / 'manifest.json'), 'extracted_text_path': str(source / 'extracted.md')}])
+    assert not _path_acknowledged('sources/source-001/extracted.md', ['extracted.md'])
+    assert not _path_acknowledged('sources/source-001/extracted.md', ['other/sources/source-001/extracted.md'])
+
+
+def test_source_manifest_symlink_cannot_import_outside_source_metadata(tmp_path):
+    from tiangong_audit.workflows.semantic_review import _read_source_artifacts
+    case = tmp_path / 'case'
+    (case / 'sources').mkdir(parents=True)
+    outside = tmp_path / 'private'
+    outside.mkdir()
+    _write_json(outside / 'manifest.json', {'secret': 'not case evidence'})
+    (case / 'sources/source-001').symlink_to(outside, target_is_directory=True)
+    assert _read_source_artifacts(case) == []
+
+
+@pytest.mark.parametrize('status, conclusion', [('matched', '通过'), ('conflict', '不通过'), ('not_applicable', '通过')])
+def test_source_json_pointer_and_block_refs_admit_supported_statuses(tmp_path, status, conclusion):
+    _write_skill_contract_files(tmp_path)
+    store, case_root = _create_clean_process_case(tmp_path)
+    _write_agent_findings(case_root)
+    _write_json(case_root / 'sources/source-001/result.json', {'result': [{'page_number': 3, 'text': 'blade manufacture'}], 'false': False})
+    _write_json(case_root / 'source-checks/checks.json', [42, {
+        'field': 'process.name.zh', 'status': status, 'checked_source_id': 'source-1',
+        'dataset_value': '叶片制造', 'evidence': 'blade manufacture',
+        'confidence_reason': '来源标注产品身份；当前引用可定位，语义由审核员判断。',
+        'evidence_refs': ['sources/source-001/result.json#/false', 'sources/source-001/result.json:p3:b1'],
+    }])
+    # Malformed record is retained and isolated; it cannot suppress a valid
+    # blocker, or shift that blocker's finding pointer from original index 1.
+    result = semantic_review('review-1', root=tmp_path, batch_id='b-1', case_store=store)
+    assert result['conclusion'] == ('不通过' if status == 'conflict' else '信息不足')
+    report = json.loads((case_root / 'reports/semantic-review.json').read_text())
+    if status == 'conflict':
+        conflict = next(item for item in report['findings'] if item['rule_id'] == 'source.field.conflict')
+        assert conflict['finding_ref']['pointer'] == '/1'
+    assert result['source_consistency']['check_status_counts'] == {status: 1}
+    assert result['audit_completeness']['complete'] is False
+    checks_path = case_root / 'source-checks/checks.json'
+    _write_json(checks_path, json.loads(checks_path.read_text())[1:])
+    result = semantic_review('review-1', root=tmp_path, batch_id='b-1', case_store=store)
+    assert result['conclusion'] == conclusion
