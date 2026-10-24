@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from tiangong_audit.normalizer import normalize_dataset
+from tiangong_audit.normalizer.projected import bound_evidence_view
 
 
 MAX_CLAIM_LENGTH = 180
@@ -114,7 +115,7 @@ def _raw_process_claims(process: dict[str, Any]) -> dict[str, str]:
         _add_claim(
             claims,
             "process.reference_flow.amount",
-            exchange.get("resultingAmount") or exchange.get("meanAmount"),
+            _raw_amount(exchange),
         )
         break
     _add_raw_exchange_claims(claims, process)
@@ -136,6 +137,7 @@ def _raw_model_claims(model: dict[str, Any]) -> dict[str, str]:
 
 
 def _normalized_claims(dataset: dict[str, Any]) -> dict[str, str]:
+    dataset = bound_evidence_view(dataset)
     claims: dict[str, str] = {}
     identity = dataset.get("identity") or {}
     name = identity.get("name") or {}
@@ -189,7 +191,7 @@ def _add_raw_exchange_claims(claims: dict[str, str], process: dict[str, Any]) ->
             or reference.get("shortDescription")
             or exchange.get("name"),
         )
-        _add_claim(claims, f"{prefix}.amount", exchange.get("resultingAmount") or exchange.get("meanAmount"))
+        _add_claim(claims, f"{prefix}.amount", _raw_amount(exchange))
         _add_claim(claims, f"{prefix}.unit", _exchange_unit(exchange))
         _add_localized(claims, f"{prefix}.comment", exchange.get("generalComment"))
 
@@ -204,7 +206,7 @@ def _add_normalized_exchange_claims(claims: dict[str, str], dataset: dict[str, A
             name = exchange.get("name") or {}
             _add_claim(claims, f"{prefix}.name.zh", name.get("zh"))
             _add_claim(claims, f"{prefix}.name.en", name.get("en"))
-            _add_claim(claims, f"{prefix}.amount", exchange.get("amount") or exchange.get("mean_amount"))
+            _add_claim(claims, f"{prefix}.amount", exchange.get("amount", exchange.get("mean_amount")))
             unit = exchange.get("unit") or {}
             _add_claim(claims, f"{prefix}.unit.zh", unit.get("zh") if isinstance(unit, dict) else unit)
             _add_claim(claims, f"{prefix}.unit.en", unit.get("en") if isinstance(unit, dict) else unit)
@@ -223,6 +225,11 @@ def _exchange_direction(value: Any) -> str:
     if text in {"output", "outputs", "out"} or "output" in text:
         return "output"
     return "unknown"
+
+
+def _raw_amount(exchange: dict[str, Any]) -> Any:
+    value = exchange.get("resultingAmount")
+    return exchange.get("meanAmount") if value in (None, "") else value
 
 
 def _exchange_unit(exchange: dict[str, Any]) -> Any:
@@ -330,7 +337,7 @@ def _flatten_text(value: Any) -> str:
 
 
 def _text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
+    return re.sub(r"\s+", " ", str("" if value is None else value)).strip()
 
 
 def _slug(value: str) -> str:

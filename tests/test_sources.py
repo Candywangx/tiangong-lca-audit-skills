@@ -182,6 +182,39 @@ def test_generate_claims_from_raw_process_dataset():
     assert claims["process.exchange.output.1.amount"] == "1"
 
 
+@pytest.mark.parametrize("amount", [0, -2, "0", "not-a-number"])
+def test_raw_amount_claims_preserve_explicit_value_including_zero(amount):
+    payload = {"processDataSet": {
+        "processInformation": {"dataSetInformation": {"referenceToReferenceFlow": "0"}},
+        "exchanges": {"exchange": [{
+            "@dataSetInternalID": "0", "exchangeDirection": "Output",
+            "resultingAmount": amount, "meanAmount": 7,
+        }]},
+    }}
+    claims = generate_source_claims(payload)
+    assert claims["process.reference_flow.amount"] == str(amount)
+    assert claims["process.exchange.output.1.amount"] == str(amount)
+
+
+def test_normalized_amount_claim_keeps_zero_instead_of_mean():
+    payload = {
+        "schema_version": "tiangong-audit-normalized-v1",
+        "reference_flow": {"exchanges": [{"amount": 0}]},
+        "exchanges": {"outputs": [{"amount": 0, "mean_amount": 7}]},
+    }
+    claims = generate_source_claims(payload)
+    assert claims["reference_flow.1.amount"] == "0"
+    assert claims["process.exchange.output.1.amount"] == "0"
+
+
+def test_normalized_invalid_explicit_amount_is_not_claimed_as_mean():
+    payload = {
+        "schema_version": "tiangong-audit-normalized-v1",
+        "exchanges": {"outputs": [{"amount": None, "mean_amount": 7, "raw": {"resultingAmount": "invalid"}}]},
+    }
+    assert "process.exchange.output.1.amount" not in generate_source_claims(payload)
+
+
 def test_download_and_extract_local_text_source(tmp_path):
     source_file = tmp_path / "report.txt"
     source_file.write_text("# Page 2\n\nThe process covers tap water production in 2021.", encoding="utf-8")

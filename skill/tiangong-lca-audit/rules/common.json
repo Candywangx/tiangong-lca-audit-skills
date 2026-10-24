@@ -30,15 +30,25 @@
       "rule_type": "deterministic",
       "severity": "advisory",
       "condition": "A non-required field is empty and its absence does not prevent a core audit check.",
-      "evidence_required": ["field requiredness", "affected audit dimension"],
-      "decision": "Do not create an audit finding solely for the empty field.",
+      "evidence_required": [
+        "field requiredness for the current dataset type and contract version",
+        "whether the value is absent, explicitly null, or merely omitted from the audit view",
+        "affected audit dimension"
+      ],
+      "decision": "Do not create an audit finding solely for an empty non-required field. A schema-required key may permit null; a required_missing UI message alone does not establish a domain defect. If requiredness or applicability is uncertain, use manual_review; if unavailable evidence prevents a core check, use the corresponding input-gap rule.",
       "suggestion": "No modification is required unless the field is needed to explain a specific issue.",
-      "exceptions": ["The field is required by the current platform configuration.", "The absence prevents a core audit check."],
+      "exceptions": [
+        "A verified contract for the current dataset type and version requires a nonempty value; assess its audit impact separately from UI validation.",
+        "The absence prevents a core audit check; identify the missing evidence without assuming the submitter omitted it."
+      ],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "04-数据文档.md",
-          "sections": ["数据集合规要求", "具体要求：元数据信息"]
+          "sections": [
+            "数据集合规要求",
+            "具体要求：元数据信息"
+          ]
         }
       ]
     },

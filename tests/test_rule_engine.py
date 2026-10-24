@@ -176,7 +176,7 @@ def test_problem_fixture_detects_missing_flow_metadata_and_duplicate_text():
     rule_ids = [item["rule_id"] for item in result["findings"]]
     assert rule_ids.count("process.flow.semantic_match") >= 2
     assert "common.language.semantic_consistency" in rule_ids
-    assert result["conclusion"] == "预检不通过"
+    assert result["conclusion"] == "预检信息不足"
 
 
 def test_heavy_naphtha_fixture_is_left_for_semantic_audit():
@@ -193,9 +193,9 @@ def test_markdown_report_explains_runtime_scope():
 
 def test_long_precheck_keeps_all_findings_without_creating_oversize_platform_opinion():
     result = check("process-audit-input-noapproved-projected.json")
-    sample = next(item for item in result["findings"] if item["severity"] == "blocking")
+    sample = next(item for item in result["findings"] if item["severity"] == "input_gap")
     result["findings"] = [
-        {**sample, "location": f"交换 {index}"} for index in range(20)
+        {**sample, "severity": "blocking", "location": f"交换 {index}"} for index in range(20)
     ]
 
     markdown = render_findings(result)

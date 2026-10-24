@@ -89,16 +89,23 @@
       "dimension": "linked_processes",
       "rule_type": "deterministic",
       "severity": "input_gap",
-      "condition": "A key linked process has not been supplied or audited.",
-      "evidence_required": ["key linked process list", "process audit summaries"],
-      "decision": "Do not confirm model completeness without reviewing key linked processes.",
-      "suggestion": "Provide and audit each key linked process, then summarize whether its findings affect the model.",
+      "condition": "A key linked process lacks complete audit evidence bound to its exact ID, version and current intake snapshot.",
+      "evidence_required": [
+        "key linked process list with exact ID and version",
+        "current linked-process snapshot and its identity",
+        "complete process semantic audit evidence meeting the input contract"
+      ],
+      "decision": "Do not confirm model completeness using an old, different-version, partial or unbound report. Keep the gap distinct from a demonstrated process content error; independently verified blockers that affect the model remain blocking. Apply the snapshot, coverage and legacy-context admission requirements in the input contract.",
+      "suggestion": "Obtain or complete the audit for each current key process snapshot and explain the effect of its verified findings on the model.",
       "exceptions": [],
       "standard_refs": [
         {
           "source": "CFIA-LCA-database-guideline",
           "file": "05-数据质量评价方法.md",
-          "sections": ["数据审查", "数据验证"]
+          "sections": [
+            "数据审查",
+            "数据验证"
+          ]
         }
       ]
     },

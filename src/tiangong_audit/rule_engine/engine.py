@@ -6,6 +6,7 @@ from typing import Any
 from pathlib import Path
 
 from tiangong_audit.contracts.agent_review import REQUIRED_AGENT_REVIEW_RULE_IDS, required_rule_ids
+from tiangong_audit.normalizer.projected import bound_evidence_view
 
 CORE_PROCESS_SECTIONS = ("过程信息", "建模信息", "输入/输出")
 # Compatibility snapshot only; production precheck resolves the catalog per call.
@@ -182,6 +183,20 @@ def _check_reference_flow(dataset: dict[str, Any]) -> list[dict[str, str]]:
                 "将参考流指针修正为实际基准交换的内部 ID。",
             )
         )
+    if matched:
+        for exchange in _all_exchanges(dataset):
+            if exchange.get("internal_id") != pointer or exchange.get("amount") is not None:
+                continue
+            findings.append(
+                _finding(
+                    "process.reference_flow.quantity_unit",
+                    "input_gap",
+                    f"输入/输出 / {_exchange_label(exchange)} / 参考量",
+                    "已匹配正式参考交换，但参考数量未提供或未能解析为有限数值；原始输入保留供核对。",
+                    "缺少可解析的参考数量，无法比较参考量与清单；不能据此认定数量错误或默认通过。",
+                    "补充原始参考数量及其来源，或核对无法解析的原始值后重新导出。",
+                )
+            )
     if len(references) > 1:
         findings.append(
             _finding(
@@ -204,15 +219,19 @@ def _check_exchange_metadata(dataset: dict[str, Any]) -> list[dict[str, str]]:
             missing.append("流类型")
         if not exchange["classification"]:
             missing.append("流分类")
+        if exchange.get("reference_property_binding") in {"missing_pointer", "unmatched", "ambiguous"}:
+            missing.append("可唯一定位的参考属性及单位关联")
+        elif exchange.get("reference_property_binding") == "matched" and not _flatten_text(exchange.get("unit")).strip():
+            missing.append("参考单位")
         if missing:
             findings.append(
                 _finding(
                     "process.flow.semantic_match",
-                    "blocking",
+                    "input_gap",
                     f"输入/输出 / {_exchange_label(exchange)}",
                     f"缺少{'、'.join(missing)}。",
-                    "缺失元数据会影响检索、连接或流角色判断。",
-                    f"补充该流的{'、'.join(missing)}。",
+                    "当前审核材料不足以核对流角色及单位，不能据此认定提交内容错误。",
+                    f"补充该流对应版本的{'、'.join(missing)}及关联证据。",
                 )
             )
     return findings
@@ -222,6 +241,19 @@ def _check_flow_version_identity(dataset: dict[str, Any]) -> list[dict[str, str]
     findings = []
     for exchange in _all_exchanges(dataset):
         flow_uuid = str(exchange.get("flow_uuid") or "")
+        binding = exchange.get("flow_binding") or {}
+        if binding.get("status") in {"missing", "mismatch", "incomplete", "legacy"}:
+            findings.append(
+                _finding(
+                    "process.flow.version_identity",
+                    "input_gap",
+                    f"输入/输出 / {_exchange_label(exchange)}",
+                    f"流身份绑定状态为 {binding['status']}；引用 UUID/版本：{binding.get('reference_uuid') or '缺失'} / {binding.get('reference_version') or '缺失'}；内嵌 UUID/版本：{binding.get('embedded_uuid') or '缺失'} / {binding.get('embedded_version') or '缺失'}。",
+                    "无法确认内嵌流材料与本交换所引用的特定版本一致；兼容保留的旧格式元数据仍需核实绑定。",
+                    "提供与该交换 UUID 和版本精确匹配的流数据集；保留原始证据，不使用其他版本代替。",
+                )
+            )
+            continue
         if not flow_uuid or exchange.get("flow_version"):
             continue
         findings.append(
@@ -621,6 +653,7 @@ def run_deterministic_checks(
 ) -> dict[str, Any]:
     if dataset.get("dataset_type") != "process":
         raise ValueError("The first runtime version only supports normalized process datasets.")
+    dataset = bound_evidence_view(dataset)
     findings = [
         *_check_coverage(dataset),
         *_check_reference_flow(dataset),
