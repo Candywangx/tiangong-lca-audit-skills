@@ -51,8 +51,10 @@ Representation Decision：继续使用现有 F3 规则与标准化契约；事�
 - [x] PYTHONPATH=src python3 -m tiangong_audit.cli check
 - [x] PYTHONPATH=src python3 -m pytest -q
 - [x] git diff --check；确认没有重复事实源、无效路径或真实案件。
-- [ ] 检查原工作区仍干净且基线未移动，将经过验证的本地提交整合回原工作区并给出交付说明。
+- [x] 检查原工作区仍干净且基线未移动，将经过验证的本地提交整合回原工作区并给出交付说明。
 
 ## 规格复核补充
 
 本轮 Agent 评测明确为指定规则维度的局部审核，局部通过不等于完整审核通过，不绕过平台查重关卡。现为22项具体输入见 tests/fixtures/rule-boundaries/scenarios.json，case_id/规则/定位/预期严重程度/禁止误报/局部结论矩阵唯一维护在同目录 expected.json（执行Agent不读取）。数量0、不可解析值及显式关联身份错配另由程序回归覆盖；合法原值不因文本形式被拒。版本类的反例应拒绝旧证据，并不推定当前数据集错误。
+
+最终交付：实现提交b69494b已整合回原工作区；整合后自检及535项测试通过。22项独立Agent场景经第二位Agent逐例语义复核接受。全部计划项完成。
