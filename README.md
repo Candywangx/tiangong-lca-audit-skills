@@ -382,6 +382,21 @@ uv run python -m tiangong_audit.cli validate-structure \
 
 ## 当前能力边界
 
+### 专家名册与专业推荐
+
+沿用当前审核对话，由 Agent 给出有证据的人选和局限，用户确认后才进入独立平台分配。当前不接网页、不自动分配。专业判断流程见 [expert-selection.md](skill/tiangong-lca-audit/references/expert-selection.md)。
+
+```bash
+PYTHONPATH=src python3 -m tiangong_audit.cli experts import --csv /path/to/private-roster.csv
+PYTHONPATH=src python3 -m tiangong_audit.cli experts bind --roster cases/expert-directory/roster.<sha256>.json
+PYTHONPATH=src python3 -m tiangong_audit.cli experts prepare --bindings cases/expert-directory/bindings.<sha256>.json --case-dir cases/active/<review-id>
+PYTHONPATH=src python3 -m tiangong_audit.cli experts validate --context cases/expert-directory/context.json --result cases/expert-directory/recommendation.json
+```
+
+命令输出私有产物路径和统计，不打印名册。真实 CSV、邮箱、绑定和试验只保存于 Git 忽略的 `cases/expert-directory/`；导入保留全部行，未入库或身份未核实者不进入正式候选。邮箱只规范外围空白和域名大小写，不合并别名、不改本地部分大小写。当前输入为 UTF-8 CSV，Excel 可另存 CSV。`experts validate` 只校验结构与引文，不证明专业判断正确，也不授权分配。
+
+### 数据审核
+
 - 可以用 Skill 对已提供的过程或模型数据进行人工辅助审核。
 - 可以生成结构化审核意见、通过报告草稿和纠偏记录。
 - 可以通过命令标准化过程数据，并执行第一批保守的确定性规则预检。

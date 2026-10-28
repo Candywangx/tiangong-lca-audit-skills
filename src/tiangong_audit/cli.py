@@ -10,6 +10,7 @@ import logging
 from uuid import uuid4
 
 from tiangong_audit.case_store import CaseStore, CaseStoreError
+from tiangong_audit.expert_commands import register_expert_commands
 from tiangong_audit.contracts import OperationLogEntry
 from tiangong_audit.contracts.agent_review import (
     new_agent_findings_template,
@@ -66,6 +67,7 @@ REQUIRED_PATHS = (
     "skill/tiangong-lca-audit/references/correction-policy.md",
     "skill/tiangong-lca-audit/references/platform-operations.md",
     "skill/tiangong-lca-audit/references/taxonomy-guide.md",
+    "skill/tiangong-lca-audit/references/expert-selection.md",
     "skill/tiangong-lca-audit/rules/common.json",
     "skill/tiangong-lca-audit/rules/process.json",
     "skill/tiangong-lca-audit/rules/model.json",
@@ -87,6 +89,13 @@ REQUIRED_PATHS = (
     "skill/document-granular-decompose/scripts/mineru_results.py",
     "src/tiangong_audit/__init__.py",
     "src/tiangong_audit/case_store.py",
+    "src/tiangong_audit/expert_commands.py",
+    "src/tiangong_audit/experts/importer.py",
+    "src/tiangong_audit/experts/binding.py",
+    "src/tiangong_audit/experts/context.py",
+    "src/tiangong_audit/experts/recommendation.py",
+    "src/tiangong_audit/experts/workspace.py",
+    "src/tiangong_audit/integrations/tiangong_api/experts.py",
     "src/tiangong_audit/contracts/__init__.py",
     "src/tiangong_audit/contracts/agent_review.py",
     "src/tiangong_audit/contracts/case.py",
@@ -1827,6 +1836,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     actions_parser.set_defaults(func=list_actions)
 
+    register_expert_commands(subparsers, root=ROOT)
     return parser
 
 

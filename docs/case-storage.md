@@ -70,7 +70,8 @@ cases/
 
 ## 原则
 
-- 根目录只保留 `index.jsonl`、`active/`、`archive/` 和 `queues/`，不再平铺批次文件。
+- 根目录保留 `index.jsonl`、`active/`、`archive/`、`queues/`，以及私有共享 `expert-directory/`，不再平铺批次文件。
+- `expert-directory/` 保存专家原始 CSV、逐行档案、平台只读快照、绑定验收、匿名匹配上下文与真实身份映射。全部 Git 忽略，不进入案件索引或 Skill。命令拒绝非该目录、已被跟踪的目标及符号链接逃逸；JSON 按内容摘要留存，不覆盖旧快照。
 - 最新队列快照统一放在 `cases/queues/<status>.latest.json`，日常查看待审核数据使用管理员队列，例如 `cases/queues/unassigned.latest.json`；需要追溯时再复制到 `cases/queues/history/<timestamp>.<status>.json`。
 - 活跃案件目录固定使用 `cases/active/<review-id>/`。日期、账号、队列来源和批次号只写入 `case.json` / `index.jsonl`，不进入主路径。
 - 使用审核任务 ID 作为稳定文件名，不使用 `01-dataset` 等仅在当前批次有效的序号。

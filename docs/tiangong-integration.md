@@ -228,6 +228,10 @@ uv run python -m tiangong_audit.cli source claims \
 
 ## 接入阶段
 
+专家名册绑定使用 admin 的只读 `qry_review_get_member_list`（全部分页，`p_role=review-member`）与 `qry_identity_get_visible_users`（按用户 ID 读回）。目录未完整读取则本轮绑定失败；个别身份不可见则保留该行缺口，其他已核实绑定可独立使用。邮箱查找候选只能帮助诊断，不证明审核员资格，不自动创建账号或授予角色。
+
+专家选择当前仅通过审核对话使用。`experts import/bind/prepare/validate` 不调用平台写接口，`bind` 显式强制 `allow_writes=False`。分配条件仅按 Skill 的 `references/platform-operations.md`；已有低层 `cmd_review_assign_reviewers` 适配与上游前端的 `admin_review_assign_reviewers` 入口存在差异，首次实际执行前需核对部署契约和读回，不通过写操作探测接口。
+
 1. 离线辅助：复制或导出数据，使用 skill 生成审核意见。
 2. 半自动：通过 API 拉取待审核任务，人工确认后提交。
 3. 平台内嵌：在审核页增加 AI 辅助审核面板。

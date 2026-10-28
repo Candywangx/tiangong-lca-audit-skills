@@ -1,5 +1,12 @@
 cases/*
 !cases/.gitkeep
+# Private expert rosters, account bindings, and real matching trials stay local.
+/cases/expert-directory/
+/expert-directory/
+/expert-roster*.csv
+/expert-roster*.xlsx
+/生命周期评价数据评审专家库*.csv
+/生命周期评价数据评审专家库*.xlsx
 .env
 .env.*
 !.env.example

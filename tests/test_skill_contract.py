@@ -67,8 +67,21 @@ def test_skill_references_are_focused():
         "correction-policy.md",
         "platform-operations.md",
         "taxonomy-guide.md",
+        "expert-selection.md",
     }
     assert expected == {path.name for path in (SKILL / "references").glob("*.md")}
+
+
+def test_expert_selection_is_private_and_requires_specific_confirmation():
+    skill = (SKILL / 'SKILL.md').read_text(encoding='utf-8')
+    selection = (SKILL / 'references/expert-selection.md').read_text(encoding='utf-8')
+    operations = (SKILL / 'references/platform-operations.md').read_text(encoding='utf-8')
+    assert 'references/expert-selection.md' in skill
+    assert 'cases/expert-directory/' in selection
+    assert '不能凑足三人' in selection
+    assert '用户确认具体任务及专家名单' in operations
+    assert '推荐不等于分配授权' in operations
+    assert '人工金标准' in selection
 
 
 def test_skill_navigation_mentions_every_reference():

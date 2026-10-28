@@ -138,5 +138,11 @@ source 文件和抽取结果属于案件证据，只能保存在 `cases/`，不�
 
 ### 案件层
 
+专家辅助复用当前对话，不接网页或常驻服务。`experts/importer.py` 和 `binding.py` 将私有名册与平台审核员目录/身份读回结合；`integrations/tiangong_api/experts.py` 只读全分页目录及身份。`experts/recommendation.py` 验证 Agent 推荐的冻结输入、资格和引文，不能代替专业判断或用户分配确认。`expert_commands.py` 提供本地导入、只读绑定、契约验证；`experts/workspace.py` 限定忽略目录并保留不可覆盖快照。
+
+当前用 JSON 证据快照承载首轮试验；没有共享在线消费者前不引入数据库或模型服务。专业推荐方法唯一定义在 Skill 的 `references/expert-selection.md`，分配授权仍归 `platform-operations.md`。推荐结果不进入审核 findings 或改变审核结论。
+
+`experts/context.py` 通过 `experts prepare` 准备证据：保留基准流及全部交换，模型关联过程复用现有引用解析和精确ID/版本准入，缺失或冲突单独标记，避免把历史残留过程当作当前模型内容。
+
 `cases/` 保存本地案件证据、source 文档、发现、报告、平台操作日志和纠偏，默认不提交。
 每条审核任务必须有 `case.json`，根目录 `index.jsonl` 记录所有任务状态，避免无法判断哪条已审、哪条待审。
