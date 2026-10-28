@@ -144,5 +144,7 @@ source 文件和抽取结果属于案件证据，只能保存在 `cases/`，不�
 
 `experts/context.py` 通过 `experts prepare` 准备证据：保留基准流及全部交换，模型关联过程复用现有引用解析和精确ID/版本准入，缺失或冲突单独标记，避免把历史残留过程当作当前模型内容。
 
+角色标注是带原文、职责范围、限制和支持等级的语义投影，`experts/roles.py`只验证完整性、引文及原文摘要，不推断专家能力。`roles-template/roles-validate`支持Agent填写和验证。`prepare --roles`生成v2上下文，`recommendation.py`验证v2明确分配的主职责和三人组合；“声明覆盖”不是专业能力认证。v1只兼容既有历史回放，不能借低版本跳过角色检查。角色名称/支持状态的结构定义以roles.py为准，专业选择方法仍唯一维护在expert-selection.md。
+
 `cases/` 保存本地案件证据、source 文档、发现、报告、平台操作日志和纠偏，默认不提交。
 每条审核任务必须有 `case.json`，根目录 `index.jsonl` 记录所有任务状态，避免无法判断哪条已审、哪条待审。

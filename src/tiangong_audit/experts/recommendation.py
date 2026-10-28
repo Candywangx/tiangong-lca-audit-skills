@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from .roles import ROLES, validate_role_profiles
+
 
 def context_digest(context: dict) -> str:
     return hashlib.sha256(json.dumps(context, ensure_ascii=False, sort_keys=True,
@@ -45,6 +47,81 @@ def _quotes(items: Any, source: dict, key: str, errors: list[str], label: str) -
             errors.append(f'{label}: quote is not supported by the cited input')
 
 
+def _contains_roles(value: Any) -> bool:
+    """Prevent role-bearing contracts from bypassing v2 through version labels."""
+    if isinstance(value, dict):
+        role_keys = {'role_profiles', 'roles', 'role', 'primary_role', 'responsibility',
+                     'suitability', 'team_rationale', 'composition_exception'}
+        return bool(role_keys.intersection(value)) or any(_contains_roles(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_roles(child) for child in value)
+    return False
+
+
+def _validate_role_teams(context: dict, datasets: dict, proposals: dict,
+                         errors: list[str]) -> list[dict]:
+    checked = validate_role_profiles(context.get('experts'), context.get('role_profiles'))
+    errors.extend(checked['errors'])
+    # An invalid profile is never used to endorse an assigned role.
+    role_index = {}
+    if checked['valid']:
+        role_index = {profile['expert_id']: {item['role']: item for item in profile['roles']}
+                      for profile in context['role_profiles']['profiles']}
+    diagnostics = []
+    for case_id, proposal in proposals.items():
+        label = f'case {case_id}'
+        dataset_type = datasets.get(case_id, {}).get('dataset_type')
+        if dataset_type not in ('process', 'model'):
+            errors.append(f'{label}: role teams require process or model dataset_type')
+        required = ['domain', 'method', 'data_model'] if dataset_type == 'model' else ['domain', 'method']
+        composition = dict.fromkeys(('domain', 'method', 'data_model'), 0)
+        if not _text(proposal.get('team_rationale')):
+            errors.append(f'{label}: team_rationale is required')
+        if 'composition_exception' in proposal and not _text(proposal['composition_exception']):
+            errors.append(f'{label}: composition_exception must be nonempty when supplied')
+        selected = proposal.get('selected')
+        if not isinstance(selected, list):
+            selected = []
+        for n, candidate in enumerate(selected):
+            where = f'{label} selected[{n}]'
+            if not isinstance(candidate, dict):
+                continue
+            role, suitability = candidate.get('primary_role'), candidate.get('suitability')
+            valid_role = isinstance(role, str) and role in ROLES
+            if not valid_role:
+                errors.append(f'{where}: primary_role must be one of domain, method or data_model')
+            else:
+                composition[role] += 1
+            if not _text(candidate.get('responsibility')):
+                errors.append(f'{where}: responsibility is required')
+            if suitability not in ('supported', 'conditional'):
+                errors.append(f'{where}: suitability must be supported or conditional')
+            expert_id = candidate.get('expert_id')
+            profile = (role_index.get(expert_id, {}).get(role)
+                       if isinstance(expert_id, str) and valid_role else None)
+            if profile is None or profile['support'] == 'insufficient':
+                errors.append(f'{where}: assigned role lacks a supported or conditional profile')
+            elif profile['support'] == 'conditional' and suitability != 'conditional':
+                errors.append(f'{where}: conditional role requires conditional suitability')
+            if proposal.get('status') == 'proposed':
+                if suitability != 'supported' or profile is None or profile['support'] != 'supported':
+                    errors.append(f'{where}: proposed requires supported suitability and role profile')
+        present = [role for role in composition if composition[role]]
+        missing = [role for role in required if not composition[role]]
+        if proposal.get('status') == 'proposed':
+            if missing:
+                errors.append(f'{label}: proposed team is missing required roles: {", ".join(missing)}')
+            if dataset_type == 'model' and any(composition[role] != 1 for role in ROLES):
+                errors.append(f'{label}: model proposed requires one domain, method and data_model expert')
+            if (dataset_type == 'process' and composition != {'domain': 2, 'method': 1, 'data_model': 0}
+                    and not _text(proposal.get('composition_exception'))):
+                errors.append(f'{label}: nondefault process composition requires composition_exception')
+        diagnostics.append({'case_id': case_id, 'declared_composition': composition,
+                            'declared_coverage': {'required': required, 'present': present, 'missing': missing},
+                            'coverage_basis': 'declared_primary_roles'})
+    return diagnostics
+
+
 def validate_recommendations(context: Any, result: Any) -> dict:
     """Check frozen inputs, eligibility, completeness and literal evidence locations.
 
@@ -57,11 +134,21 @@ def validate_recommendations(context: Any, result: Any) -> dict:
         context = {}; errors.append('context: expected an object')
     if not isinstance(result, dict):
         result = {}; errors.append('result: expected an object')
-    if context.get('schema_version') != 'tiangong-expert-context-v1':
+    context_version = context.get('schema_version')
+    result_version = result.get('schema_version')
+    v2 = context_version == 'tiangong-expert-context-v2' and result_version == 'tiangong-expert-recommendation-v2'
+    v1 = context_version == 'tiangong-expert-context-v1' and result_version == 'tiangong-expert-recommendation-v1'
+    if context_version not in ('tiangong-expert-context-v1', 'tiangong-expert-context-v2'):
         errors.append('context: unsupported schema_version')
+    if not (v1 or v2):
+        errors.append('context/result: schema versions must match')
+    if context_version == 'tiangong-expert-context-v1' and _contains_roles(context):
+        errors.append('context: role profiles or assignments require v2')
+    if result_version == 'tiangong-expert-recommendation-v1' and _contains_roles(result):
+        errors.append('result: role profiles or assignments require v2')
     if not isinstance(context.get('binding_sha256'), str) or not re.fullmatch('[0-9a-f]{64}', context['binding_sha256']):
         errors.append('context: binding snapshot SHA-256 is required')
-    if result.get('schema_version') != 'tiangong-expert-recommendation-v1':
+    if result_version not in ('tiangong-expert-recommendation-v1', 'tiangong-expert-recommendation-v2'):
         errors.append('result: unsupported schema_version')
     if result.get('input_sha256') != context_digest(context):
         errors.append('input_sha256: context changed or was not bound')
@@ -82,11 +169,11 @@ def validate_recommendations(context: Any, result: Any) -> dict:
             errors.append(f'{label}: at most three experts may be proposed')
         if not isinstance(gaps, list) or any(not _text(gap) for gap in gaps):
             errors.append(f'{label}: gaps must be a list of nonempty strings')
-        if status not in {'proposed', 'insufficient_candidates', 'needs_context'}:
+        if status not in ('proposed', 'insufficient_candidates', 'needs_context'):
             errors.append(f'{label}: unsupported proposal status')
         if status == 'proposed' and len(selected) != 3:
             errors.append(f'{label}: proposed requires three experts')
-        if status in {'insufficient_candidates', 'needs_context'} and not gaps:
+        if status in ('insufficient_candidates', 'needs_context') and not gaps:
             errors.append(f'{label}: a limited proposal requires an explanation')
         if status == 'insufficient_candidates' and len(selected) >= 3:
             errors.append(f'{label}: insufficient_candidates requires fewer than three experts')
@@ -114,7 +201,10 @@ def validate_recommendations(context: Any, result: Any) -> dict:
                     'field', errors, f'{where} expert evidence')
             _quotes(candidate.get('dataset_evidence'), dataset_sources,
                     'ref', errors, f'{where} dataset evidence')
-    return {'valid': not errors, 'errors': errors,
-            'assignment_authorized': False, 'semantic_accuracy_verified': False,
-            'live_identity_rechecked': False,
-            'case_count': len(proposals)}
+    diagnostics = _validate_role_teams(context, datasets, proposals, errors) if v2 else None
+    checked = {'valid': not errors, 'errors': errors,
+               'assignment_authorized': False, 'semantic_accuracy_verified': False,
+               'live_identity_rechecked': False, 'case_count': len(proposals)}
+    if diagnostics is not None:
+        checked['case_diagnostics'] = diagnostics
+    return checked

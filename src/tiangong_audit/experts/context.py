@@ -9,6 +9,7 @@ from tiangong_audit.workflows.title_duplicate import dataset_payload
 from tiangong_audit.workflows.intake import _resolve_model_process_refs
 from tiangong_audit.workflows.model_review import _snapshot_identity, dataset_snapshot_sha256
 from .workspace import write_snapshot
+from .roles import validate_role_profiles
 
 
 def _leaves(value, pointer: str):
@@ -48,9 +49,8 @@ def dataset_evidence(payload: dict, *, snapshot_ref: str) -> list[dict]:
     return result
 
 
-def prepare_context(bindings_path: Path, case_dirs: list[Path], directory: Path) -> dict:
-    raw_bindings = bindings_path.read_bytes()
-    bindings = json.loads(raw_bindings)
+def eligible_experts(bindings: dict) -> list[dict]:
+    """Project admitted, bound experts for role and case evidence consumers."""
     experts = []
     for record in bindings['records']:
         if record.get('eligible') is not True:
@@ -60,6 +60,18 @@ def prepare_context(bindings_path: Path, case_dirs: list[Path], directory: Path)
         experts.append({key: record[key] for key in ('expert_id', 'eligible', 'fields_text', 'experience_text')})
     if len({r['expert_id'] for r in experts}) != len(experts):
         raise ValueError('Duplicate eligible expert identity')
+    return experts
+
+
+def prepare_context(bindings_path: Path, case_dirs: list[Path], directory: Path,
+                    *, roles_path: Path | None = None) -> dict:
+    raw_bindings = bindings_path.read_bytes()
+    experts = eligible_experts(json.loads(raw_bindings))
+    role_profiles = None
+    if roles_path is not None:
+        role_profiles = json.loads(roles_path.read_text(encoding='utf-8'))
+        if not validate_role_profiles(experts, role_profiles)['valid']:
+            raise ValueError('Role profiles do not match the current expert evidence')
     datasets = []
     for case_dir in case_dirs:
         manifest = json.loads((case_dir / 'case.json').read_text(encoding='utf-8'))
@@ -112,6 +124,9 @@ def prepare_context(bindings_path: Path, case_dirs: list[Path], directory: Path)
                          'evidence': evidence})
     if not datasets or len({r['case_id'] for r in datasets}) != len(datasets):
         raise ValueError('Cases must be nonempty and unique')
-    return {'schema_version': 'tiangong-expert-context-v1',
-            'binding_sha256': hashlib.sha256(raw_bindings).hexdigest(),
-            'experts': experts, 'datasets': datasets}
+    context = {'schema_version': 'tiangong-expert-context-v2' if role_profiles is not None else 'tiangong-expert-context-v1',
+               'binding_sha256': hashlib.sha256(raw_bindings).hexdigest(),
+               'experts': experts, 'datasets': datasets}
+    if role_profiles is not None:
+        context['role_profiles'] = role_profiles
+    return context

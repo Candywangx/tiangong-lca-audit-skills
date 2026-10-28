@@ -10,7 +10,8 @@ from pathlib import Path
 import sys
 
 from tiangong_audit.experts.binding import bind_roster
-from tiangong_audit.experts.context import prepare_context
+from tiangong_audit.experts.context import prepare_context, eligible_experts
+from tiangong_audit.experts.roles import ROLES, role_input_digest, validate_role_profiles
 from tiangong_audit.experts.importer import import_roster
 from tiangong_audit.experts.recommendation import validate_recommendations
 from tiangong_audit.experts.workspace import private_directory, write_private_bytes, write_snapshot
@@ -56,11 +57,29 @@ def run_expert_command(args: argparse.Namespace) -> int:
                        'binding_statuses': dict(Counter(r['binding']['status'] for r in bound['records'])),
                        'directory_count': len(members), 'identity_readback_count': len(users),
                        'bindings_path': str(path), 'platform_writes': 0}
+        elif args.expert_command == 'roles-template':
+            experts = eligible_experts(_read(args.bindings))
+            role_input = {'schema_version': 'tiangong-expert-role-input-v1', 'experts': experts}
+            template = {'schema_version': 'tiangong-expert-roles-v1', 'input_sha256': role_input_digest(experts),
+                        'profiles': [{'expert_id': expert['expert_id'], 'roles': [
+                            {'role': role, 'support': '', 'scope': '', 'evidence': [], 'limits': []}
+                            for role in sorted(ROLES)]} for expert in experts]}
+            input_path = write_snapshot(directory, 'role-input', role_input)
+            template_path = write_snapshot(directory, 'roles-template', template)
+            summary = {'expert_count': len(experts), 'input_path': str(input_path),
+                       'template_path': str(template_path), 'platform_writes': 0}
+        elif args.expert_command == 'roles-validate':
+            checked = validate_role_profiles(eligible_experts(_read(args.bindings)), _read(args.roles))
+            path = write_snapshot(directory, 'roles-validation', checked)
+            print(json.dumps({**checked, 'validation_path': str(path), 'platform_writes': 0}, ensure_ascii=False, indent=2))
+            return 0 if checked['valid'] else 1
         elif args.expert_command == 'prepare':
-            context = prepare_context(Path(args.bindings), [Path(p) for p in args.case_dir], directory)
+            context = prepare_context(Path(args.bindings), [Path(p) for p in args.case_dir], directory,
+                                      roles_path=Path(args.roles) if args.roles else None)
             path = write_snapshot(directory, 'context', context)
             summary = {'expert_count': len(context['experts']), 'case_count': len(context['datasets']),
-                       'context_path': str(path), 'platform_writes': 0}
+                       'context_path': str(path), 'context_schema_version': context['schema_version'],
+                       'role_profiles_included': 'role_profiles' in context, 'platform_writes': 0}
         else:
             checked = validate_recommendations(_read(args.context), _read(args.result))
             path = write_snapshot(directory, 'recommendation-validation', checked)
@@ -79,7 +98,7 @@ def run_expert_command(args: argparse.Namespace) -> int:
 def register_expert_commands(subparsers, *, root: Path) -> None:
     parser = subparsers.add_parser('experts', help='Private roster import, read-only binding and recommendation validation')
     commands = parser.add_subparsers(dest='expert_command', required=True)
-    for name in ('import', 'bind', 'prepare', 'validate'):
+    for name in ('import', 'bind', 'roles-template', 'roles-validate', 'prepare', 'validate'):
         command = commands.add_parser(name)
         command.add_argument('--directory', default=str(root / 'cases' / 'expert-directory'),
                              help='Git-ignored cases/expert-directory path; no public output directory')
@@ -89,7 +108,12 @@ def register_expert_commands(subparsers, *, root: Path) -> None:
             command.add_argument('--roster', required=True)
         elif name == 'prepare':
             command.add_argument('--bindings', required=True)
+            command.add_argument('--roles', help='Validated role profiles; creates a role-aware v2 context')
             command.add_argument('--case-dir', required=True, action='append', help='Existing case directory; repeat for multiple cases')
+        elif name in ('roles-template', 'roles-validate'):
+            command.add_argument('--bindings', required=True)
+            if name == 'roles-validate':
+                command.add_argument('--roles', required=True)
         else:
             command.add_argument('--context', required=True)
             command.add_argument('--result', required=True)

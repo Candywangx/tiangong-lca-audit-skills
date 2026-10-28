@@ -389,11 +389,16 @@ uv run python -m tiangong_audit.cli validate-structure \
 ```bash
 PYTHONPATH=src python3 -m tiangong_audit.cli experts import --csv /path/to/private-roster.csv
 PYTHONPATH=src python3 -m tiangong_audit.cli experts bind --roster cases/expert-directory/roster.<sha256>.json
-PYTHONPATH=src python3 -m tiangong_audit.cli experts prepare --bindings cases/expert-directory/bindings.<sha256>.json --case-dir cases/active/<review-id>
+PYTHONPATH=src python3 -m tiangong_audit.cli experts roles-template --bindings cases/expert-directory/bindings.<sha256>.json
+# Agent按原文填写角色模板，保留每项职责的证据、范围与局限，再校验：
+PYTHONPATH=src python3 -m tiangong_audit.cli experts roles-validate --bindings cases/expert-directory/bindings.<sha256>.json --roles cases/expert-directory/roles.json
+PYTHONPATH=src python3 -m tiangong_audit.cli experts prepare --bindings cases/expert-directory/bindings.<sha256>.json --roles cases/expert-directory/roles.json --case-dir cases/active/<review-id>
 PYTHONPATH=src python3 -m tiangong_audit.cli experts validate --context cases/expert-directory/context.json --result cases/expert-directory/recommendation.json
 ```
 
 命令输出私有产物路径和统计，不打印名册。真实 CSV、邮箱、绑定和试验只保存于 Git 忽略的 `cases/expert-directory/`；导入保留全部行，未入库或身份未核实者不进入正式候选。邮箱只规范外围空白和域名大小写，不合并别名、不改本地部分大小写。当前输入为 UTF-8 CSV，Excel 可另存 CSV。`experts validate` 只校验结构与引文，不证明专业判断正确，也不授权分配。
+
+角色档案将行业/工艺、LCA方法、数据/建模分开记录；方法专家可以依据其实际经验跨行业承担限定职责。团队仍须覆盖核心行业问题，不能用三位通用方法专家补齐人数。新角色上下文/结果使用v2，保留v1历史回放兼容；无`--roles`的prepare仍输出v1，不代表完成角色组队验证。当前职责是建议，由Agent阅读证据形成，不由程序按关键词自动评级。
 
 ### 数据审核
 
