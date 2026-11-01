@@ -1,0 +1,49 @@
+{
+  "scope": "synthetic semantic regression for expert selection, not dataset approval",
+  "cases": [
+    {
+      "id": "family_and_data_issue",
+      "dataset_type": "process",
+      "dataset": "对象明确为木质纤维板生产。功能单位写成台，但输出按千克填写；部分生产工艺参数待源文件核对。",
+      "experts": [
+        {"id": "wood", "experience": "参与过木制板材产品生命周期评价，负责生产边界和原料清单复核。未披露本案同一设备型号。"},
+        {"id": "method", "experience": "实际审核过多行业LCA报告，负责功能单位、边界、分配原则及标准一致性。"},
+        {"id": "data", "experience": "开发过LCI数据库，实际处理过流属性、单位转换和参考量归一化。"}
+      ],
+      "question": "是否可组成三人建议？指出本次主职责、是否需要偏离默认组合，以及尚未证明的能力。"
+    },
+    {
+      "id": "methods_without_core_domain",
+      "dataset_type": "process",
+      "dataset": "重组微生物发酵生产工业酶，需要核查培养基配方、通气耗氧和发酵产率。",
+      "experts": [
+        {"id": "method_a", "experience": "在建筑产品LCA中负责功能单位、系统边界和分配原则复核，无生物生产经历。"},
+        {"id": "method_b", "experience": "在金属产品LCA中负责背景数据和不确定性分析，无微生物生产经历。"},
+        {"id": "data_c", "experience": "开发过LCI数据格式转换工具，未从事生物工艺或相关行业评价。"}
+      ],
+      "question": "三位专家的方法和数据能力能否替代缺少的核心行业能力，直接形成完整三人建议？"
+    },
+    {
+      "id": "bounded_inorganic_family",
+      "dataset_type": "process",
+      "dataset": "无机酸生产清单；本次职责是核对酸类产品的行业边界、余热副产物分配，以及数据库中蒸汽引用和单位。不是设备设计或催化剂性能鉴定。",
+      "experts": [
+        {"id": "acid", "experience": "实际完成过无机酸碱产品LCA，负责原料及副产品清单与行业边界核对。未说明相同制酸装置的操作经历。"},
+        {"id": "method", "experience": "跨行业LCA审核中实际核对过多产品分配、系统边界和能源回收方法。"},
+        {"id": "data", "experience": "在LCI数据库中负责流引用、版本和单位映射检查。"}
+      ],
+      "question": "是否可按一行业、一方法、一数据职责提出三人建议？不能宣称哪些能力？"
+    },
+    {
+      "id": "adjacent_roles_missing_hydropower",
+      "dataset_type": "model",
+      "dataset": "水库综合利用模型，核心审核包含库区温室气体排放和灌溉、防洪、发电的多功能技术边界。",
+      "experts": [
+        {"id": "building", "experience": "实际从事普通建筑材料和建筑施工LCA，没有披露水库或水利工程经历。"},
+        {"id": "method", "experience": "实际审核一般产品LCA边界和分配，但未披露水库排放或水利多功能评价。"},
+        {"id": "data", "experience": "实际开发LCI数据库和模型连接检查工具，无水库环境评价经历。"}
+      ],
+      "question": "三位都有各自的有限能力，是否足以宣称本案完整行业、方法和建模覆盖？"
+    }
+  ]
+}

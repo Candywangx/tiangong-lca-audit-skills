@@ -11,6 +11,7 @@ Skill 必须帮助审核员稳定完成以下工作：
 3. 避免漏判，也避免因非必填字段为空而机械驳回。
 4. 给出面向学习者、能够直接执行的修改建议。
 5. 将人工纠偏沉淀为规则或回归案例。
+6. 按需关联私有专家名册与平台审核员账号，基于专业证据推荐人选，交用户确认后才进入独立分配流程。
 
 Skill 不负责代替审核员作最终签字，也不默认执行平台上的分配、提交、通过或驳回操作。
 
@@ -34,6 +35,7 @@ Skill 不负责代替审核员作最终签字，也不默认执行平台上的�
 - `skill/tiangong-lca-audit/references/output-contract.md`：审核发现、结论和报告写法。
 - `skill/tiangong-lca-audit/references/correction-policy.md`：纠偏如何升级为规则或评测。
 - `skill/tiangong-lca-audit/references/platform-operations.md`：平台操作流程，必须与审核判断分离。
+- `skill/tiangong-lca-audit/references/expert-selection.md`：专家专业推荐、证据与评测方法；不定义数据审核结论或分配授权。
 - `skill/tiangong-lca-audit/rules/*.json`：唯一机器可读规则目录。
 - `skill/tiangong-lca-audit/assets/`：输出模板和按需查询的分类数据；不得作为整份上下文加载。
 
@@ -81,6 +83,7 @@ Skill 不负责代替审核员作最终签字，也不默认执行平台上的�
 ## 隐私与安全
 
 - 真实案件只放 `cases/`，不得提交。
+- 真实专家名册、邮箱、账号绑定、角色标注及匹配试验只放被 Git 忽略的 `cases/expert-directory/`；代码、Skill 和测试只使用脱敏或虚构样例。
 - 测试样例必须脱敏。
 - 不在 Skill 中保存账号、token、个人联系方式或签字。
 - 对平台执行写操作前必须获得用户明确确认。

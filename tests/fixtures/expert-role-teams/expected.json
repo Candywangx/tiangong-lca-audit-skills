@@ -1,0 +1,18 @@
+{
+  "family_and_data_issue": {
+    "team_supported": true,
+    "required": ["行业角色依据产品族LCA实践", "功能单位错误作为审核职责而非选人阻断", "不同组合解释", "不虚构同设备精确工艺专长"]
+  },
+  "methods_without_core_domain": {
+    "team_supported": false,
+    "required": ["方法和数据能力不能补造生物行业经验", "保留行业缺口而不凑三人"]
+  },
+  "bounded_inorganic_family": {
+    "team_supported": true,
+    "required": ["产品族实绩足以支持限定行业职责", "一行业一方法一数据组合解释", "不声称装置操作或催化剂鉴定能力"]
+  },
+  "adjacent_roles_missing_hydropower": {
+    "team_supported": false,
+    "required": ["相邻角色各有能力不等于覆盖水库核心问题", "保留水库排放和水利多功能技术边界缺口"]
+  }
+}

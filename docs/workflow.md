@@ -1,5 +1,9 @@
 # Workflow
 
+## 专家推荐与分配
+
+该分支从 [Skill 执行入口](../skill/tiangong-lca-audit/SKILL.md)进入。专业适配按 [expert-selection.md](../skill/tiangong-lca-audit/references/expert-selection.md)；每次推荐的工作量核对与披露、完整任务包确认和分配验收，统一按 [platform-operations.md](../skill/tiangong-lca-audit/references/platform-operations.md) 执行。
+
 ## 审核使用流程
 
 1. 推荐以 `intake-review --review-id <review-id> --account-role admin` 作为平台只读取数入口；case 主目录始终是 `cases/active/<review-id>/`，不传 `--batch-id` 时 `batch_id` 只作为元数据写入 `case.json`（默认 `<yyyymmdd>-<account-role>`）。查看待审核数据统一走管理员账号，只有写回建议或通过草稿时才按 `reject` / `pass` 区分管理员和审核员语义角色。

@@ -228,6 +228,16 @@ uv run python -m tiangong_audit.cli source claims \
 
 ## 接入阶段
 
+专家名册绑定使用 admin 的只读 `qry_review_get_member_list`（全部分页，`p_role=review-member`）与 `qry_identity_get_visible_users`（按用户 ID 读回）。目录未完整读取则本轮绑定失败；个别身份不可见则保留该行缺口，其他已核实绑定可独立使用。邮箱查找候选只能帮助诊断，不证明审核员资格，不自动创建账号或授予角色。
+
+专家选择当前仅通过审核对话使用。`experts` 命令不调用平台写接口，联网命令显式强制 `allow_writes=False`。分配条件和完整任务包执行流程唯一维护在 Skill 的 `references/platform-operations.md`。
+
+`ReviewAPI.get_assignment_package` 使用 `qry_root_review_reference_progress_v2` 取得平台当前引用闭包，分批读取 `qry_review_get_items` 与 `qry_review_batch_eligibility_v1`，检查每项身份及范围稳定性。不要用遗留 `ReviewAPI.assign_reviewers` 的 RPC 路径编排新分配；已核实的上游入口为 Edge Function `admin_review_assign_reviewers`，每次接收 `{reviewId, reviewerIds, deadline}`，只作用于一个任务。上游批量操作也是逐 review ID 调用，因此必须处理部分成功。
+
+任务包表示决策：范围/计划是带版本、内容指纹及原始证据的私有 F3 投影，消费者为 Agent 和本地检查命令；它不是授权。用户确认、实际写入记录与平台读回属于 F4 操作证据，追加保存，不用计划布尔值代替授权。专业匹配理由保持自然语言。接口变化时重新验证读取契约，不能降级为仅根任务；提升为自动执行入口必须另行授权并具备恢复验收测试。
+
+`experts assignment-plan` 输出私有计划路径和脱敏数量摘要；任何任务冲突时退出码为 1。`experts assignment-check --plan <path>` 会重新读平台，只有完整包验收通过才返回 0。前后范围摘要包括主数据内容、任务 ID/版本、关联内容指纹；状态变化不改变范围摘要。代码在 `experts/assignment.py`，回归覆盖根已分配/子未分配、共享任务冲突、部分成功、范围变化、已完成引用和缺失记录。两命令不核验账号绑定，分配前仍执行既有身份复核。
+
 1. 离线辅助：复制或导出数据，使用 skill 生成审核意见。
 2. 半自动：通过 API 拉取待审核任务，人工确认后提交。
 3. 平台内嵌：在审核页增加 AI 辅助审核面板。

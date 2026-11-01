@@ -61,6 +61,18 @@ def make_client(session: FakeSession, *, allow_writes: bool = False) -> Tiangong
     )
 
 
+def test_rpc_page_applies_postgrest_pagination_in_api_schema():
+    session = FakeSession([])
+    client = make_client(session)
+    assert client.rpc_page('qry_example', {'p_root_id': 'root'}, limit=100, offset=200,
+                           order='id.asc') == []
+    method, url, options = session.calls[0]
+    assert method == 'POST' and url.endswith('/rest/v1/rpc/qry_example')
+    assert options['params'] == {'limit': 100, 'offset': 200, 'order': 'id.asc'}
+    assert options['json'] == {'p_root_id': 'root'}
+    assert options['headers']['Content-Profile'] == 'api'
+
+
 def test_client_requires_supabase_configuration(tmp_path, monkeypatch):
     for name in (
         "TIANGONG_SUPABASE_URL",

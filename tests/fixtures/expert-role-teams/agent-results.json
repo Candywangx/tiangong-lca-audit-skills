@@ -1,0 +1,108 @@
+{
+  "policy_sha256": "40a8a84c04bce664f331a8b1f34359b1ee4eedae6cc778401caacd1ad5a4aca6",
+  "cases": [
+    {
+      "id": "family_and_data_issue",
+      "team_supported": true,
+      "selected": [
+        {
+          "expert_id": "wood",
+          "primary_role": "domain",
+          "responsibility": "supported：依据“参与过木制板材产品生命周期评价，负责生产边界和原料清单复核”，复核木质纤维板的产品族边界与原料清单，标出待源文件核对的工艺参数及其影响。"
+        },
+        {
+          "expert_id": "method",
+          "primary_role": "method",
+          "responsibility": "supported：依据“实际审核过多行业LCA报告，负责功能单位、边界、分配原则及标准一致性”，审核功能单位写成台而输出按千克的问题，明确功能单位和参考量关系及方法一致性。"
+        },
+        {
+          "expert_id": "data",
+          "primary_role": "data_model",
+          "responsibility": "supported：依据“开发过LCI数据库，实际处理过流属性、单位转换和参考量归一化”，核验流属性、单位、参考量归一化，并在方法澄清后检查数量换算。"
+        }
+      ],
+      "rationale": "支持限定职责三人建议。过程默认两行业加一方法，此处偏离为一行业、一方法、一数据，因为明确的单位和参考量问题需要数据处理实践，三人分工有直接证据。木制板材产品族LCA实绩足以支持本次行业职责；数据问题属于审核关注点，对象已明确，不要求先把数据修正才能选人。",
+      "limits": [
+        "wood未证明同一设备型号操作或精确生产路线实绩；这些不是本次限定职责的必要条件，不能仅因此降级。",
+        "参数仍须源文件核对，推荐不代表数据正确或已通过审核。",
+        "method未证明所有LCIA类别或特殊方法，data未证明完整LCA方法或天工平台熟练程度。",
+        "待用户复核，可用性和分配授权未提供。"
+      ]
+    },
+    {
+      "id": "methods_without_core_domain",
+      "team_supported": false,
+      "selected": [
+        {
+          "expert_id": "method_a",
+          "primary_role": "method",
+          "responsibility": "supported，仅限通用方法：依据“在建筑产品LCA中负责功能单位、系统边界和分配原则复核”，承担对应方法检查，不能据此承担生物工艺合理性审核。"
+        },
+        {
+          "expert_id": "data_c",
+          "primary_role": "data_model",
+          "responsibility": "supported，仅限格式工作：依据“开发过LCI数据格式转换工具”，承担格式转换和字段映射检查，未证明发酵清单实质审核或复杂模型连接能力。"
+        }
+      ],
+      "rationale": "不支持完整三人团队，不凑足三人。培养基配方、通气耗氧和发酵产率需要相关生物生产证据，三人均未提供。method_b的“在金属产品LCA中负责背景数据和不确定性分析”支持相应限定方法职责；若实际工作集中在这些方面，可调整方法人选，但增加第二位方法专家也不能替代核心行业角色。",
+      "limits": [
+        "核心domain为insufficient：培养基、通气耗氧和发酵产率的工艺合理性无人有依据承担，须补充相关人选。",
+        "跨行业方法经验不证明微生物生产能力；证据不足不等于断言专家不会。",
+        "data_c格式开发经历不证明完整LCA方法、发酵建模或天工平台能力。",
+        "两位有限职责候选不能组成完整建议，可用性和分配授权未提供。"
+      ]
+    },
+    {
+      "id": "bounded_inorganic_family",
+      "team_supported": true,
+      "selected": [
+        {
+          "expert_id": "acid",
+          "primary_role": "domain",
+          "responsibility": "supported：依据“实际完成过无机酸碱产品LCA，负责原料及副产品清单与行业边界核对”，审核酸类产品行业边界及原料、副产品清单，为余热副产物技术边界提供行业判断。"
+        },
+        {
+          "expert_id": "method",
+          "primary_role": "method",
+          "responsibility": "supported：依据“跨行业LCA审核中实际核对过多产品分配、系统边界和能源回收方法”，审核余热副产物分配及能源回收处理一致性。"
+        },
+        {
+          "expert_id": "data",
+          "primary_role": "data_model",
+          "responsibility": "supported：依据“在LCI数据库中负责流引用、版本和单位映射检查”，检查蒸汽引用、版本及单位。"
+        }
+      ],
+      "rationale": "支持一行业、一方法、一数据的限定三人建议。过程采用替代组合是因为本次明确有余热分配和蒸汽引用、单位两类专门职责，三人的实绩各有直接用途。acid有无机酸碱产品族LCA的边界和清单经历；本案不是设备设计或催化剂鉴定，未披露同一制酸装置操作经历不构成单独降级理由。",
+      "limits": [
+        "不能宣称acid有同一装置操作、设备设计或催化剂鉴定能力，不能把产品族经历扩写为某条未披露路线的实绩。",
+        "method未证明所有LCIA类别或其他特殊方法；data未证明全部LCA方法或天工平台熟练程度。",
+        "实际分配及蒸汽数据仍须逐项审核，团队适配不证明数据已正确。",
+        "建议待用户复核，可用性和分配授权未提供。"
+      ]
+    },
+    {
+      "id": "adjacent_roles_missing_hydropower",
+      "team_supported": false,
+      "selected": [
+        {
+          "expert_id": "method",
+          "primary_role": "method",
+          "responsibility": "supported，仅限一般方法：依据“实际审核一般产品LCA边界和分配”，检查明确的通用边界、分配表达与一致性；水库排放及水利多功能专项方法适配仍待确认。"
+        },
+        {
+          "expert_id": "data",
+          "primary_role": "data_model",
+          "responsibility": "supported：依据“实际开发LCI数据库和模型连接检查工具”，承担模型连接与数据库引用检查，不承担未经证明的水库环境评价职责。"
+        }
+      ],
+      "rationale": "不支持完整模型团队。building的“普通建筑材料和建筑施工LCA”不能证明水库排放及灌溉、防洪、发电多功能技术边界的行业适配。method的一般方法工作与data的连接检查各有依据，但加上building凑够三人不构成本案实质行业、方法和建模覆盖。须补充水库、水利多功能及排放评价证据或人选，并明确专项方法由谁承担。",
+      "limits": [
+        "核心domain为insufficient：库区温室气体排放及水利多功能技术边界的行业审核无人有证据承担。",
+        "一般方法经验可跨行业承担限定工作，但不能扩写为水库排放或水利多功能专项方法实绩；专项职责须补证或另有人承担。",
+        "data具备连接检查证据不等于具备水库环境评价经验。",
+        "building未披露相关经历是证据缺口，不是否认其实际能力，当前不作为核心行业候选。",
+        "现有两位限定候选不足形成完整三人建议；可用性和分配授权未提供。"
+      ]
+    }
+  ]
+}

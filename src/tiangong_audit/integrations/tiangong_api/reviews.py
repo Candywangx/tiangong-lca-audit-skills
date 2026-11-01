@@ -95,6 +95,108 @@ class ReviewAPI:
             raise TiangongAPIError("Platform review comment response must be a list")
         return rows
 
+    def get_assignment_package(self, root_review_id: str) -> dict[str, Any]:
+        """Read the current root/reference closure, never infer it from names.
+
+        The platform derives transitive references, model result processes and
+        unpublished dependencies. Missing current reference tasks raise remotely;
+        a failed query must never be converted to an empty package.
+        """
+        from .datasets import DatasetAPI
+        from ...workflows.model_review import dataset_snapshot_sha256
+
+        def reference_progress():
+            records, seen = [], set()
+            while True:
+                rows = self.client.rpc_page('qry_root_review_reference_progress_v2',
+                    {'p_root_review_id': root_review_id}, limit=100, offset=len(records),
+                    order='target_table.asc,data_id.asc,data_version.asc,reference_review_id.asc')
+                if not isinstance(rows, list) or len(rows) > 100:
+                    raise TiangongAPIError('Reference progress must be a valid page')
+                # A deployment may cap responses below our requested page size.
+                # Continue even after a short page, until an explicit empty page.
+                if not rows:
+                    return records
+                for row in rows:
+                    if not isinstance(row, dict) or any(
+                        not isinstance(row.get(key), str) or not row[key]
+                        for key in ('reference_review_id', 'target_table', 'data_id',
+                                    'data_version', 'submitted_revision_checksum')
+                    ):
+                        raise TiangongAPIError('Malformed reference task identity')
+                    uid = row['reference_review_id']
+                    if uid in seen or uid == root_review_id:
+                        raise TiangongAPIError('Duplicate or self-referencing review task')
+                    seen.add(uid)
+                    if type(row.get('state_code')) is not int or type(row.get('reviewer_count')) is not int:
+                        raise TiangongAPIError('Reference state/count is missing')
+                    records.append(row)
+
+        def task_identity(row):
+            return tuple(row.get(key) for key in (
+                'id', 'data_id', 'data_version', 'state_code', 'reviewer_id', 'deadline'
+            )) + (row.get('json', {}).get('review_kind'), row.get('json', {}).get('data', {}).get('table'))
+
+        root = self.get_task(root_review_id)
+        table = root.get('json', {}).get('data', {}).get('table')
+        if (root.get('id') != root_review_id or root.get('json', {}).get('review_kind') != 'root'
+                or table not in ('processes', 'lifecyclemodels')):
+            raise TiangongAPIError('Assignment package requires an explicit process/model root task')
+        references = reference_progress()
+        ids = [root_review_id] + [row['reference_review_id'] for row in references]
+        tasks, eligibility = [], []
+        for start in range(0, len(ids), 40):
+            chunk = ids[start:start + 40]
+            for name, payload, key, destination in (
+                ('qry_review_get_items', {'p_review_ids': chunk, 'p_data_id': None,
+                                         'p_data_version': None, 'p_state_codes': None}, 'id', tasks),
+                ('qry_review_batch_eligibility_v1', {'p_review_ids': chunk,
+                                                    'p_operation': 'admin-assign'}, 'review_id', eligibility),
+            ):
+                rows = self.client.rpc(name, payload)
+                if (not isinstance(rows, list) or len(rows) != len(chunk)
+                        or any(not isinstance(row, dict) for row in rows)
+                        or {row.get(key) for row in rows} != set(chunk)):
+                    raise TiangongAPIError('Incomplete or duplicate package task readback')
+                destination.extend(rows)
+        by_id = {row['id']: row for row in tasks}
+        if task_identity(by_id[root_review_id]) != task_identity(root):
+            raise TiangongAPIError('Root task changed during package discovery')
+        for row in tasks:
+            reviewers = row.get('reviewer_id')
+            if (type(row.get('state_code')) is not int or not isinstance(reviewers, list)
+                    or any(not isinstance(uid, str) or not uid for uid in reviewers)
+                    or len(set(reviewers)) != len(reviewers)):
+                raise TiangongAPIError('Malformed assignment readback')
+        for ref in references:
+            row = by_id[ref['reference_review_id']]
+            if (row.get('data_id') != ref['data_id'] or row.get('data_version') != ref['data_version']
+                    or row.get('json', {}).get('data', {}).get('table') != ref['target_table']
+                    or row.get('json', {}).get('review_kind') != 'reference'
+                    or row['state_code'] != ref['state_code']
+                    or len(row['reviewer_id']) != ref['reviewer_count']):
+                raise TiangongAPIError('Reference identity/state changed during package discovery')
+        data_api = DatasetAPI(self.client)
+        get_data = data_api.get_model if table == 'lifecyclemodels' else data_api.get_process
+        dataset = get_data(root['data_id'], root['data_version'])
+        if sorted(reference_progress(), key=lambda row: row['reference_review_id']) != sorted(
+            references, key=lambda row: row['reference_review_id']
+        ):
+            raise TiangongAPIError('Reference scope changed during package discovery')
+        # Reference progress contains counts, not reviewer IDs. Re-read actual
+        # assignments too, catching same-count replacements during discovery.
+        for start in range(0, len(ids), 40):
+            chunk = ids[start:start + 40]
+            final = self.client.rpc('qry_review_get_items', {'p_review_ids': chunk,
+                'p_data_id': None, 'p_data_version': None, 'p_state_codes': None})
+            if (not isinstance(final, list) or len(final) != len(chunk)
+                    or any(not isinstance(row, dict) for row in final)
+                    or {row.get('id') for row in final} != set(chunk)
+                    or any(task_identity(row) != task_identity(by_id[row['id']]) for row in final)):
+                raise TiangongAPIError('Task assignment changed during package discovery')
+        return {'root_review_id': root_review_id, 'root_content_sha256': dataset_snapshot_sha256(dataset),
+                'references': references, 'tasks': [by_id[uid] for uid in ids], 'eligibility': eligibility}
+
     def assign_reviewers(
         self,
         task_id: str,
