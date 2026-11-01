@@ -281,6 +281,14 @@ class TiangongAPIClient:
         """Call a read-only RPC through the platform's api schema facade."""
         return self._request("POST", f"rest/v1/rpc/{name}", payload=payload, schema="api")
 
+    def rpc_page(self, name: str, payload: dict[str, Any], *, limit: int,
+                 offset: int, order: str) -> Any:
+        """Read one ordered RPC result page through PostgREST query parameters."""
+        if type(limit) is not int or limit < 1 or type(offset) is not int or offset < 0 or not order:
+            raise ValueError('RPC pagination requires positive limit, nonnegative offset and order')
+        return self._request('POST', f'rest/v1/rpc/{name}', payload=payload, schema='api',
+                             params={'limit': limit, 'offset': offset, 'order': order})
+
     def command(self, name: str, payload: dict[str, Any]) -> Any:
         """Call a write-capable Supabase RPC after writes are explicitly enabled."""
         if not self.allow_writes:

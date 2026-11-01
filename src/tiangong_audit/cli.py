@@ -95,6 +95,7 @@ REQUIRED_PATHS = (
     "src/tiangong_audit/experts/context.py",
     "src/tiangong_audit/experts/recommendation.py",
     "src/tiangong_audit/experts/roles.py",
+    "src/tiangong_audit/experts/assignment.py",
     "src/tiangong_audit/experts/workspace.py",
     "src/tiangong_audit/integrations/tiangong_api/experts.py",
     "src/tiangong_audit/contracts/__init__.py",

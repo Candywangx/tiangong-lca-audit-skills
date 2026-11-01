@@ -84,6 +84,22 @@ def test_expert_selection_is_private_and_requires_specific_confirmation():
     assert '人工金标准' in selection
 
 
+def test_platform_expert_proposal_requires_live_workload_and_deduplicated_increment():
+    skill = (SKILL / 'SKILL.md').read_text(encoding='utf-8')
+    operations = (SKILL / 'references/platform-operations.md').read_text(encoding='utf-8')
+    assert '工作量核对与披露（每次推荐必做）' in operations
+    assert 'qry_review_get_member_workload' in operations
+    assert 'qry_review_get_member_workload_items_v1' in operations
+    for field in ('当前待审', '本批去重新增', '预计合计', '统计时间'):
+        assert field in operations
+    assert '每位专家按 review ID 去重' in operations
+    assert '未知不能记为 0' in operations
+    assert '已分配给该专家或已完成' in operations
+    assert '专业准入' in operations
+    assert '连续重复推荐' in operations
+    assert '每次推荐必做的工作量核对与披露' in skill
+
+
 def test_skill_navigation_mentions_every_reference():
     skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     for reference in (SKILL / "references").glob("*.md"):

@@ -10,12 +10,13 @@ from pathlib import Path
 import sys
 
 from tiangong_audit.experts.binding import bind_roster
+from tiangong_audit.experts.assignment import plan_assignment, verify_assignment
 from tiangong_audit.experts.context import prepare_context, eligible_experts
 from tiangong_audit.experts.roles import ROLES, role_input_digest, validate_role_profiles
 from tiangong_audit.experts.importer import import_roster
 from tiangong_audit.experts.recommendation import validate_recommendations
 from tiangong_audit.experts.workspace import private_directory, write_private_bytes, write_snapshot
-from tiangong_audit.integrations.tiangong_api import TiangongAPIClient
+from tiangong_audit.integrations.tiangong_api import TiangongAPIClient, ReviewAPI
 from tiangong_audit.integrations.tiangong_api.experts import ExpertAPI
 
 
@@ -57,6 +58,34 @@ def run_expert_command(args: argparse.Namespace) -> int:
                        'binding_statuses': dict(Counter(r['binding']['status'] for r in bound['records'])),
                        'directory_count': len(members), 'identity_readback_count': len(users),
                        'bindings_path': str(path), 'platform_writes': 0}
+        elif args.expert_command in ('assignment-plan', 'assignment-check'):
+            client = TiangongAPIClient(account_role='admin', allow_writes=False)
+            if args.expert_command == 'assignment-plan':
+                package = ReviewAPI(client).get_assignment_package(args.review_id)
+                plan = plan_assignment(package, args.reviewer_id)
+                plan['read_at'] = datetime.now(timezone.utc).isoformat()
+                path = write_snapshot(directory, 'assignment-plan', plan)
+                summary = {'total_tasks': len(package['tasks']),
+                           'by_type': dict(Counter(row['json']['data']['table'] for row in package['tasks'])),
+                           **{key: len(plan[key]) for key in ('to_assign', 'already_assigned', 'completed', 'blocked')},
+                           'plan_path': str(path), 'assignment_authorized': False,
+                           'live_identity_rechecked': False, 'platform_writes': 0}
+                success = not plan['blocked']
+            else:
+                plan = _read(args.plan)
+                package = ReviewAPI(client).get_assignment_package(plan['package']['root_review_id'])
+                checked = verify_assignment(plan, package)
+                path = write_snapshot(directory, 'assignment-check', {
+                    'read_at': datetime.now(timezone.utc).isoformat(), 'plan_path': str(Path(args.plan).resolve()),
+                    'package': package, 'verification': checked})
+                summary = {'complete': checked['complete'], 'same_scope': checked['same_scope'],
+                           'assigned': len(checked['assigned_review_ids']),
+                           'completed': len(checked['completed_review_ids']),
+                           'pending': len(checked['pending_review_ids']), 'check_path': str(path),
+                           'assignment_authorized': False, 'platform_writes': 0}
+                success = checked['complete']
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+            return 0 if success else 1
         elif args.expert_command == 'roles-template':
             experts = eligible_experts(_read(args.bindings))
             role_input = {'schema_version': 'tiangong-expert-role-input-v1', 'experts': experts}
@@ -98,7 +127,8 @@ def run_expert_command(args: argparse.Namespace) -> int:
 def register_expert_commands(subparsers, *, root: Path) -> None:
     parser = subparsers.add_parser('experts', help='Private roster import, read-only binding and recommendation validation')
     commands = parser.add_subparsers(dest='expert_command', required=True)
-    for name in ('import', 'bind', 'roles-template', 'roles-validate', 'prepare', 'validate'):
+    for name in ('import', 'bind', 'roles-template', 'roles-validate', 'prepare', 'validate',
+                 'assignment-plan', 'assignment-check'):
         command = commands.add_parser(name)
         command.add_argument('--directory', default=str(root / 'cases' / 'expert-directory'),
                              help='Git-ignored cases/expert-directory path; no public output directory')
@@ -106,6 +136,12 @@ def register_expert_commands(subparsers, *, root: Path) -> None:
             command.add_argument('--csv', required=True)
         elif name == 'bind':
             command.add_argument('--roster', required=True)
+        elif name == 'assignment-plan':
+            command.add_argument('--review-id', required=True, help='Current root review ID')
+            command.add_argument('--reviewer-id', action='append', required=True,
+                                 help='Exactly three platform reviewer IDs; repeat this flag')
+        elif name == 'assignment-check':
+            command.add_argument('--plan', required=True, help='Frozen private assignment plan JSON')
         elif name == 'prepare':
             command.add_argument('--bindings', required=True)
             command.add_argument('--roles', help='Validated role profiles; creates a role-aware v2 context')
